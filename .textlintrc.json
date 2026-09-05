@@ -56,7 +56,8 @@
       ]
     },
     "en-capitalization": {
-      "severity": "warning"
+      "severity": "warning",
+      "allowWords": ["tree-sitter-language-pack", "gnuplot"]
     }
   }
 }

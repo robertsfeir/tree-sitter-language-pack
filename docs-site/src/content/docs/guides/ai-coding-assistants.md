@@ -10,7 +10,7 @@ Give your coding agent structural understanding of any codebase — parse and ex
 The plugin drops the tree-sitter-language-pack agent skills straight into your coding assistant. Once installed, the agent can:
 
 - Parse a file in any of 371 languages and reason over its syntax tree.
-- Pull out functions, classes, imports, exports, and symbols on request.
+- Pull out functions, classes, imports, exports, and symbols when asked.
 - Detect a file's language, list supported languages, and manage the local parser cache.
 
 Under the hood it registers the `tree-sitter-language-pack` MCP server for you, so there is nothing to configure by hand. The plugin ships from this repository's own marketplace, [`xberg-io/tree-sitter-language-pack`](https://github.com/xberg-io/tree-sitter-language-pack), where you can also see its version history and source.
