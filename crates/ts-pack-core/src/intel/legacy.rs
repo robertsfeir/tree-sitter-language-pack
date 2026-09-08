@@ -46,7 +46,7 @@ pub(super) fn extract_intelligence(source: &str, language: &str, tree: &tree_sit
     let mut docstrings = Vec::new();
     collect_docstrings(&root, source, language, &mut docstrings);
     let mut symbols = Vec::new();
-    collect_symbols(&root, source, &mut symbols);
+    collect_symbols(&root, source, language, &mut symbols);
     let mut diagnostics = Vec::new();
     collect_diagnostics(&root, source, &mut diagnostics);
 
@@ -206,13 +206,13 @@ fn collect_structure_call(
     true
 }
 
-fn collect_symbols(node: &tree_sitter::Node, source: &str, symbols: &mut Vec<SymbolInfo>) {
-    if let Some(symbol) = symbol_at(node, source) {
+fn collect_symbols(node: &tree_sitter::Node, source: &str, language: &str, symbols: &mut Vec<SymbolInfo>) {
+    if let Some(symbol) = symbol_at(node, source, language) {
         symbols.push(symbol);
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_symbols(&child, source, symbols);
+        collect_symbols(&child, source, language, symbols);
     }
 }
 
