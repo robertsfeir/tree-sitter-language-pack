@@ -44,6 +44,37 @@ fn yaml_structured_keys_do_not_become_scalar_paths() {
 }
 
 #[test]
+fn yaml_alias_keys_are_preserved() {
+    let source =
+        "name: &key value\n*key : retained\nbase: &shape {nested: 1}\n*shape : kept\nlist:\n- &item one\n- *item\n";
+    let result =
+        process(source, &ProcessConfig::new("yaml").with_data_extraction(true)).expect("alias keys are valid YAML");
+    assert_eq!(result.metrics.error_count, 0, "fixture must parse without recovery");
+    let root = result.data.expect("yaml exposes data");
+    let entries: Vec<_> = root
+        .children
+        .iter()
+        .map(|node| (node.key.as_deref(), node.value.as_deref()))
+        .collect();
+    assert_eq!(
+        entries,
+        vec![
+            (Some("name"), Some("value")),
+            (Some("*key"), Some("retained")),
+            (Some("base"), None),
+            (Some("*shape"), Some("kept")),
+            (Some("list"), None),
+        ]
+    );
+    let items: Vec<_> = root.children[4]
+        .children
+        .iter()
+        .map(|node| node.value.as_deref())
+        .collect();
+    assert_eq!(items, vec![Some("one"), Some("*item")]);
+}
+
+#[test]
 fn toml_dotted_keys_follow_segments_instead_of_source_spacing() {
     let root = data(
         "service . \"connection\" = { retry . count = 3 }\n[profile . \"release\"]\nopt-level = 3\n",

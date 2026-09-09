@@ -769,7 +769,7 @@ fn yaml_mapping_pair(node: &Node, source: &str, depth: usize, truncated: &mut us
                 });
             }
         }
-        let value = Some(strip_quotes(node_text(&val, source)).to_string());
+        let value = Some(yaml_scalar_text(&val, source));
         return Some(DataNode {
             kind: DataNodeKind::KeyValue,
             key,
@@ -790,9 +790,14 @@ fn yaml_mapping_pair(node: &Node, source: &str, depth: usize, truncated: &mut us
     })
 }
 
+/// The path segment a YAML key contributes, or `None` for a structured key.
+///
+/// An alias key (`*name : value`) is kept as its alias text: its source holds
+/// no nested values to leak into the key, and dropping the pair would lose the
+/// value it maps to.
 fn yaml_scalar_key(node: &Node, source: &str) -> Option<String> {
     match node.kind() {
-        "plain_scalar" | "single_quote_scalar" | "double_quote_scalar" | "block_scalar" => {
+        "plain_scalar" | "single_quote_scalar" | "double_quote_scalar" | "block_scalar" | "alias" => {
             Some(strip_quotes(node_text(node, source)).to_string())
         }
         "flow_node" | "block_node" => {
@@ -802,6 +807,21 @@ fn yaml_scalar_key(node: &Node, source: &str) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// The scalar text of a YAML value, without the anchor or tag that may precede it.
+///
+/// `name: &key value` wraps the scalar in a `flow_node` whose first named child
+/// is the anchor; the value is the content beside it, not the whole span.
+fn yaml_scalar_text(node: &Node, source: &str) -> String {
+    let mut cursor = node.walk();
+    let content = if matches!(node.kind(), "flow_node" | "block_node") {
+        node.named_children(&mut cursor)
+            .find(|child| !matches!(child.kind(), "anchor" | "tag"))
+    } else {
+        None
+    };
+    strip_quotes(node_text(content.as_ref().unwrap_or(node), source)).to_string()
 }
 
 fn yaml_sequence_items(node: &Node, source: &str, depth: usize, truncated: &mut usize) -> Vec<DataNode> {
@@ -824,10 +844,12 @@ fn yaml_sequence_items(node: &Node, source: &str, depth: usize, truncated: &mut 
         };
         let value = if sub.is_empty() {
             let mut c2 = child.walk();
-            child
-                .named_children(&mut c2)
-                .next()
-                .map(|n| strip_quotes(node_text(&n, source)).to_string())
+            let content = if child.kind() == "flow_node" {
+                Some(child)
+            } else {
+                child.named_children(&mut c2).next()
+            };
+            content.map(|n| yaml_scalar_text(&n, source))
         } else {
             None
         };
