@@ -1,13 +1,14 @@
-//! Declaration coverage for the code-shaped repository formats. Their grammars
-//! name nodes the generic matcher misreads, so each has its own adapter,
-//! exercised here on the shapes real repository files take.
+//! Declaration coverage for the code-shaped repository formats: SQL DDL,
+//! Justfiles and Dockerfiles. Their grammars name nodes the generic matcher
+//! misreads, so each has its own adapter, exercised here on the shapes real
+//! PostgreSQL bootstrap scripts, Justfiles and multi-stage Dockerfiles take.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use tree_sitter_language_pack::{ProcessConfig, ProcessResult, StructureItem, StructureKind, process};
 
 fn extract(source: &str, language: &str) -> ProcessResult {
     process(source, &ProcessConfig::new(language).all())
-        .expect("real grammar required; build with TSLP_LANGUAGES=sql,just")
+        .expect("real grammar required; build with TSLP_LANGUAGES=sql,just,dockerfile")
 }
 
 /// (name, kind, start_line, end_line) for each item, top level only.
@@ -228,4 +229,67 @@ fn justfile_recipes_aliases_and_modules_are_declarations_with_trimmed_spans() {
     assert!(JUSTFILE[build.start_byte..build.end_byte].starts_with("[group("));
     assert!(JUSTFILE[build.start_byte..build.end_byte].ends_with("echo done"));
     assert!(result.symbols.is_empty(), "Just emits no flat symbols");
+}
+
+const DOCKERFILE: &str = "\
+# syntax=docker/dockerfile:1
+ARG ERLANG_VERSION=29.0.3
+ARG DEBIAN_VERSION=bookworm
+FROM hexpm/erlang:${ERLANG_VERSION}-debian-${DEBIAN_VERSION} AS toolchain_base
+ARG ELIXIR_VERSION
+ENV MIX_ENV=${MIX_ENV} \\
+    LANG=C.UTF-8
+RUN apt-get update \\
+  && apt-get install -y git
+COPY . /app
+
+# The next stage.
+FROM toolchain_base AS deps_base
+WORKDIR /app
+ENV RUSTUP_HOME=/opt/rustup
+FROM debian:${DEBIAN_VERSION}-slim as runtime_api
+ARG MIX_ENV
+ENV LANG C.UTF-8
+FROM nginx:1.27-alpine
+ARG MIX_ENV
+CMD [\"nginx\"]
+";
+
+#[test]
+fn dockerfile_named_stages_nest_their_args_and_env_pairs() {
+    let result = extract(DOCKERFILE, "dockerfile");
+    assert_eq!(result.metrics.error_count, 0);
+    assert_eq!(
+        summary(&result.structure),
+        vec![
+            (Some("ERLANG_VERSION"), &other("Constant"), 1, 1),
+            (Some("DEBIAN_VERSION"), &other("Constant"), 2, 2),
+            (Some("toolchain_base"), &StructureKind::Module, 3, 9),
+            (Some("deps_base"), &StructureKind::Module, 12, 14),
+            (Some("runtime_api"), &StructureKind::Module, 15, 17),
+            (Some("MIX_ENV"), &other("Constant"), 19, 19),
+        ]
+    );
+    assert_eq!(
+        summary(&result.structure[2].children),
+        vec![
+            (Some("ELIXIR_VERSION"), &other("Constant"), 4, 4),
+            (Some("MIX_ENV"), &other("Constant"), 5, 6),
+            (Some("LANG"), &other("Constant"), 5, 6),
+        ]
+    );
+    assert_eq!(
+        summary(&result.structure[3].children),
+        vec![(Some("RUSTUP_HOME"), &other("Constant"), 14, 14)]
+    );
+    assert_eq!(
+        summary(&result.structure[4].children),
+        vec![
+            (Some("MIX_ENV"), &other("Constant"), 16, 16),
+            (Some("LANG"), &other("Constant"), 17, 17),
+        ]
+    );
+    let stage = &result.structure[2].span;
+    assert!(DOCKERFILE[stage.start_byte..stage.end_byte].ends_with("COPY . /app"));
+    assert!(result.symbols.is_empty(), "Dockerfile emits no flat symbols");
 }

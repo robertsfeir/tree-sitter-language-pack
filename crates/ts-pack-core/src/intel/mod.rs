@@ -6,6 +6,7 @@
 
 pub mod chunking;
 pub(crate) mod data_extraction;
+pub(crate) mod dockerfile;
 pub(crate) mod elixir;
 pub(crate) mod extract;
 pub mod intelligence;
