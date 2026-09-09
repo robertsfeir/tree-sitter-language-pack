@@ -5,6 +5,12 @@ vars:
   ALEF: "alef"
 
 tasks:
+  set:
+    desc: "Set an explicit release version and synchronize generated outputs"
+    cmds:
+      - '{{.ALEF}} sync-versions --set "{{.CLI_ARGS}}"'
+      - task: sync
+
   sync:
     desc: "Synchronize version across all package manifests"
     cmds:

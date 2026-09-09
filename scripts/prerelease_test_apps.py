@@ -126,7 +126,7 @@ def _write_go_override(staged: Path) -> None:
     `replace` needs no checksum, so `go.sum` stays valid unmodified.
     """
     local = ROOT / "packages" / "go"
-    module = "github.com/xberg-io/tree-sitter-language-pack/packages/go/v2"
+    module = "github.com/xberg-io/tree-sitter-language-pack/packages/go"
     (staged / "go.work").write_text(f"go 1.26\n\nuse .\n\nreplace {module} => {local}\n")
 
 
@@ -225,7 +225,7 @@ TARGETS: dict[str, Target] = {
             apply_override=_write_go_override,
             verify=(
                 "go list -m -f '{{.Path}} => {{with .Replace}}{{.Dir}}{{end}}' "
-                "github.com/xberg-io/tree-sitter-language-pack/packages/go/v2"
+                "github.com/xberg-io/tree-sitter-language-pack/packages/go"
             ),
             run="go test ./... -count=1",
         ),

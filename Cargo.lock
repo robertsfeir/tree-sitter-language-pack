@@ -941,7 +941,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -985,7 +985,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1883,7 +1883,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2438,7 +2438,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2495,7 +2495,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2976,10 +2976,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3267,12 +3267,13 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.27.0"
+version = "0.26.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2038684e0058edba0d17302619f62eabce4a8e11c6ac59506996a8d79848851d"
+checksum = "17ebdd3a5a7e28a1890b876fdbd0c3c0fe0a6336cffaa104f11b9f720c9daa29"
 dependencies = [
  "cc",
  "regex",
+ "regex-syntax",
  "serde_json",
  "streaming-iterator",
  "tree-sitter-language",
@@ -3286,7 +3287,7 @@ checksum = "ca0d1bf6fdd806e43ae5198f82f527056d359def39e54e67a0f478ac09dac081"
 
 [[package]]
 name = "tree-sitter-language-pack"
-version = "2.0.0"
+version = "1.17.0"
 dependencies = [
  "ahash",
  "cc",
@@ -3312,7 +3313,7 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter-language-pack-dart"
-version = "2.0.0"
+version = "1.17.0"
 dependencies = [
  "flutter_rust_bridge",
  "serde_json",
@@ -3321,7 +3322,7 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter-language-pack-jni"
-version = "2.0.0"
+version = "1.17.0"
 dependencies = [
  "async-trait",
  "base64",
@@ -3335,7 +3336,7 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter-language-pack-swift"
-version = "2.0.0"
+version = "1.17.0"
 dependencies = [
  "ahash",
  "async-trait",
@@ -3351,7 +3352,7 @@ dependencies = [
 
 [[package]]
 name = "ts-pack-cli"
-version = "2.0.0"
+version = "1.17.0"
 dependencies = [
  "axum",
  "clap",
@@ -3369,7 +3370,7 @@ dependencies = [
 
 [[package]]
 name = "ts-pack-core-ffi"
-version = "2.0.0"
+version = "1.17.0"
 dependencies = [
  "ahash",
  "cbindgen",
@@ -3383,7 +3384,7 @@ dependencies = [
 
 [[package]]
 name = "ts-pack-core-node"
-version = "2.0.0"
+version = "1.17.0"
 dependencies = [
  "napi",
  "napi-build",
@@ -3395,7 +3396,7 @@ dependencies = [
 
 [[package]]
 name = "ts-pack-core-php"
-version = "2.0.0"
+version = "1.17.0"
 dependencies = [
  "ext-php-rs",
  "serde",
@@ -3406,7 +3407,7 @@ dependencies = [
 
 [[package]]
 name = "ts-pack-core-py"
-version = "2.0.0"
+version = "1.17.0"
 dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
@@ -3417,7 +3418,7 @@ dependencies = [
 
 [[package]]
 name = "ts-pack-core-wasm"
-version = "2.0.0"
+version = "1.17.0"
 dependencies = [
  "futures",
  "futures-util",
@@ -3674,7 +3675,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

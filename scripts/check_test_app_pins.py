@@ -78,7 +78,7 @@ PINS: tuple[Pin, ...] = (
         "test_apps/csharp/TreeSitterLanguagePack.E2eTests.csproj",
         r'Include="XbergIo\.TreeSitterLanguagePack"\s+Version="([^"]*)"',
     ),
-    Pin("go", "test_apps/go/go.mod", r"xberg-io/tree-sitter-language-pack/packages/go/v2 v([^\s]+)"),
+    Pin("go", "test_apps/go/go.mod", r"xberg-io/tree-sitter-language-pack/packages/go v([^\s]+)"),
     Pin("rust", "test_apps/rust/Cargo.toml", r'package = "tree-sitter-language-pack", version = "([^"]*)"'),
     Pin("ruby", "test_apps/ruby/Gemfile", r"gem 'tree_sitter_language_pack', '([^']*)'"),
     Pin("python", "test_apps/python/pyproject.toml", r'tree-sitter-language-pack==([^"]+)"'),

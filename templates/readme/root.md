@@ -89,7 +89,7 @@ See [Node.js README](crates/ts-pack-core-node/README.md) for full documentation.
 <summary><strong>Go</strong></summary>
 
 ```sh
-go get github.com/xberg-io/tree-sitter-language-pack/packages/go/v2
+go get github.com/xberg-io/tree-sitter-language-pack/packages/go
 ```
 
 See [Go README](packages/go/README.md) for full documentation.

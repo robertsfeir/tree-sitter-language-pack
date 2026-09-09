@@ -324,6 +324,12 @@ jobs:
             exit 1
           fi
 
+      - name: Setup Elixir formatter for generated e2e tests
+        uses: xberg-io/actions/setup-elixir@v1
+        with:
+          elixir-version: "1.20.4"
+          otp-version: "29"
+
       # Implements the generated-code policy in CLAUDE.md. The task is named
       # `e2e:generate` (CLAUDE.md's "generate:e2e" is wrong); it fans out to
       # `alef e2e generate`, which is invoked directly here to match the

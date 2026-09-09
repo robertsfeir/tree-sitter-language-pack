@@ -7,15 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.0.0] - 2026-09-09
+## [1.17.0] - 2026-09-09
 
 ### Changed
 
-- **Breaking (Rust):** upgrade the tree-sitter runtime from 0.26 to 0.27. Consumers using
-  `Language` with a direct `tree-sitter` dependency must upgrade that dependency to 0.27.
-  The grammar revision pins are unchanged.
-- **Breaking (Go):** append `/v2` to the module import path: use
-  `github.com/xberg-io/tree-sitter-language-pack/packages/go/v2` for this major release.
+- Retain tree-sitter 0.26 and the current grammar revisions. The attempted 0.27 upgrade
+  is deferred because SwiftTreeSitter 0.25 requires the 0.25 C runtime, which conflicts
+  with the newer runtime in our published static Swift library. (#189)
 - Regenerate bindings, fixtures, documentation, and release workflows with Alef 0.85.10;
   upgrade Rust dependencies, including `dirs` 7 and `zstd` 0.14.
 
