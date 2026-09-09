@@ -525,17 +525,21 @@ fn export_specifier_names(node: &tree_sitter::Node, source: &str) -> Vec<String>
 /// matcher. Elixir definitions are handled by [`super::elixir::definition`].
 pub(super) fn structure_kind_at(node: &tree_sitter::Node, language: &str) -> Option<StructureKind> {
     match node.kind() {
-        "function_definition" | "function_declaration" | "function_item" | "arrow_function" => {
-            Some(StructureKind::Function)
-        }
+        "function_definition"
+        | "function_declaration"
+        | "protocol_function_declaration"
+        | "function_item"
+        | "arrow_function" => Some(StructureKind::Function),
         "method_definition" | "method_declaration" => Some(StructureKind::Method),
         "method" | "singleton_method" if language == "ruby" => Some(StructureKind::Method),
+        "class_declaration" if language == "swift" => swift_nominal_kind(node),
         "class_definition" | "class_declaration" | "class" => Some(StructureKind::Class),
         "struct_item" | "struct_definition" | "struct_declaration" => Some(StructureKind::Struct),
-        "interface_declaration" | "interface_definition" => Some(StructureKind::Interface),
+        "interface_declaration" | "interface_definition" | "protocol_declaration" => Some(StructureKind::Interface),
         "enum_item" | "enum_definition" | "enum_declaration" => Some(StructureKind::Enum),
         "module_definition" | "mod_item" | "package_header" | "package_declaration" => Some(StructureKind::Module),
         "module" if language == "ruby" => Some(StructureKind::Module),
+        "internal_module" if matches!(language, "typescript" | "tsx") => Some(StructureKind::Namespace),
         "trait_item" => Some(StructureKind::Trait),
         "impl_item" => Some(StructureKind::Impl),
         _ => None,
@@ -638,28 +642,124 @@ pub(super) fn has_wildcard_token(node: &tree_sitter::Node) -> bool {
 }
 
 /// Classify `node` as a symbol, if it is a named declaration.
-pub(super) fn symbol_at(node: &tree_sitter::Node, source: &str) -> Option<SymbolInfo> {
+pub(super) fn symbol_at(node: &tree_sitter::Node, source: &str, language: &str) -> Option<SymbolInfo> {
+    let mut declaration = *node;
     let symbol_kind = match node.kind() {
-        "function_definition" | "function_declaration" | "function_item" => SymbolKind::Function,
+        "function_definition" | "function_declaration" | "protocol_function_declaration" | "function_item" => {
+            SymbolKind::Function
+        }
+        "class_declaration" if language == "swift" => match swift_nominal_kind(node)? {
+            StructureKind::Struct => SymbolKind::Type,
+            StructureKind::Enum => SymbolKind::Enum,
+            StructureKind::Class => SymbolKind::Class,
+            _ => return None,
+        },
         "class_definition" | "class_declaration" => SymbolKind::Class,
-        "type_alias_declaration" | "type_item" => SymbolKind::Type,
+        "type_alias_declaration" | "typealias_declaration" | "type_item" => SymbolKind::Type,
         "type_spec" => go_type_spec_symbol_kind(node),
-        "interface_declaration" => SymbolKind::Interface,
+        "interface_declaration" | "protocol_declaration" => SymbolKind::Interface,
         "enum_item" | "enum_declaration" => SymbolKind::Enum,
         "const_item" | "const_declaration" => SymbolKind::Constant,
+        "variable_declarator" if matches!(language, "javascript" | "typescript" | "tsx") => {
+            let parent = node.parent()?;
+            if parent.kind() != "lexical_declaration"
+                || parent
+                    .child_by_field_name("kind")
+                    .is_none_or(|kind| kind.kind() != "const")
+                || !in_declaration_scope(node)
+                || node
+                    .child_by_field_name("value")
+                    .and_then(unparenthesized)
+                    .is_some_and(|value| {
+                        matches!(
+                            value.kind(),
+                            "arrow_function" | "function_expression" | "generator_function"
+                        )
+                    })
+            {
+                return None;
+            }
+            SymbolKind::Constant
+        }
+        "pattern" if language == "swift" => {
+            declaration = node.parent()?;
+            if declaration.kind() != "property_declaration" || !in_declaration_scope(node) {
+                return None;
+            }
+            let mut cursor = declaration.walk();
+            if !declaration
+                .named_children(&mut cursor)
+                .any(|child| child.kind() == "value_binding_pattern" && node_text(&child, source) == "let")
+            {
+                return None;
+            }
+            SymbolKind::Constant
+        }
         "let_declaration" | "variable_declaration" | "lexical_declaration" => SymbolKind::Variable,
         _ => return None,
     };
-    let name_node = node.child_by_field_name("name")?;
+    let name_node = if node.kind() == "pattern" {
+        node.child_by_field_name("bound_identifier")?
+    } else {
+        node.child_by_field_name("name")?
+    };
+    if node.kind() == "variable_declarator" && name_node.kind() != "identifier" {
+        return None;
+    }
     Some(SymbolInfo {
         name: node_text(&name_node, source).to_string(),
         kind: symbol_kind,
-        span: span_from_node(node),
-        type_annotation: node
+        span: span_from_node(&declaration),
+        type_annotation: declaration
             .child_by_field_name("type")
             .map(|n| node_text(&n, source).to_string()),
-        doc: doc_comment_at(node, source),
+        doc: doc_comment_at(&declaration, source),
     })
+}
+
+/// Parentheses preserve an initializer's identity; calls and other expressions do not.
+fn unparenthesized(mut node: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    while node.kind() == "parenthesized_expression" {
+        node = node.named_child(0)?;
+    }
+    Some(node)
+}
+
+/// Swift uses one node kind for classes, structs, actors, extensions and enums.
+fn swift_nominal_kind(node: &tree_sitter::Node) -> Option<StructureKind> {
+    match node.child_by_field_name("declaration_kind")?.kind() {
+        "struct" => Some(StructureKind::Struct),
+        "extension" => Some(StructureKind::Impl),
+        "enum" => Some(StructureKind::Enum),
+        "class" | "actor" => Some(StructureKind::Class),
+        _ => None,
+    }
+}
+
+/// New constant declarations belong to file/type scope, not executable bodies.
+///
+/// Generators are their own node kinds in the JavaScript family, with or
+/// without `async`, so they are listed beside the plain function forms.
+fn in_declaration_scope(node: &tree_sitter::Node) -> bool {
+    let mut parent = node.parent();
+    while let Some(ancestor) = parent {
+        if matches!(
+            ancestor.kind(),
+            "function_declaration"
+                | "function_expression"
+                | "generator_function_declaration"
+                | "generator_function"
+                | "arrow_function"
+                | "method_definition"
+                | "function_body"
+                | "lambda_literal"
+                | "computed_property"
+        ) {
+            return false;
+        }
+        parent = ancestor.parent();
+    }
+    true
 }
 
 /// Classify `node` as a syntax diagnostic, if it is an error or missing node.
@@ -688,6 +788,19 @@ pub(super) fn diagnostic_at(node: &tree_sitter::Node, source: &str) -> Option<Di
 /// `"identifier"` (Kotlin packages), then `"scoped_identifier"` (Java packages).
 /// Returns `None` if no non-empty text is found via any strategy.
 pub(super) fn resolve_structure_name(node: &tree_sitter::Node, source: &str) -> Option<String> {
+    if node.kind() == "arrow_function" {
+        let mut value = *node;
+        let mut parent = value.parent()?;
+        while parent.kind() == "parenthesized_expression" {
+            value = parent;
+            parent = value.parent()?;
+        }
+        if parent.kind() != "variable_declarator" || parent.child_by_field_name("value")?.id() != value.id() {
+            return None;
+        }
+        let name = parent.child_by_field_name("name")?;
+        return (name.kind() == "identifier").then(|| node_text(&name, source).to_string());
+    }
     if let Some(n) = node.child_by_field_name("name") {
         let text = node_text(&n, source);
         if !text.is_empty() {
