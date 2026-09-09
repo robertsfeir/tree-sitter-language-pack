@@ -1,6 +1,7 @@
 packages:
   - "."
   - "crates/ts-pack-core-node"
+  - "crates/ts-pack-core-node/npm/*"
   - "e2e/node"
 onlyBuiltDependencies:
   - esbuild
@@ -24,5 +25,6 @@ overrides:
   esbuild: "^0.28.1"
 
 sharedWorkspaceLockfile: true
+linkWorkspacePackages: true
 autoInstallPeers: true
 hoist: true
