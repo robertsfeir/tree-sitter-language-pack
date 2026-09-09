@@ -45,6 +45,25 @@ For batch processing in Rust, reuse the parser object. Creating one parser per p
 Names are case-sensitive — use the lowercase canonical form. Aliases exist: `shell` -> `bash`, `makefile` -> `make`, `bazel` -> `starlark`. See [Languages](/languages/) for the full list.
 :::
 
+## Ambiguous extensions in Rust
+
+`detect_language_from_extension()` returns the default language for an extension. Use
+`extension_ambiguity()` to check whether other languages share that extension before choosing a parser:
+
+```rust
+use tree_sitter_language_pack::extension_ambiguity;
+
+let (default_language, alternatives) = extension_ambiguity("h").expect("ambiguous extension");
+assert_eq!(default_language, "c");
+assert_eq!(alternatives, &["cpp", "objc"]);
+assert_eq!(extension_ambiguity("rs"), None);
+```
+
+Pass the extension without a leading dot. Matching ignores ASCII case, and unknown or unambiguous
+extensions return `None`. With the `serde` feature enabled, `extension_ambiguity_json()` returns the
+same information as a JSON object with `assigned` and `alternatives` fields. These lookups use the
+complete language registry and do not require downloaded parsers.
+
 ## The syntax tree
 
 Every parse returns a `Tree` with a single root node. Its kind is the top-level grammar node for the language: `module` for Python, `program` for JavaScript, `source_file` for Rust and Go.

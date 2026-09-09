@@ -70,7 +70,11 @@ pub(crate) mod definitions;
 pub mod download;
 
 pub use error::Error;
-pub use extensions::{detect_language_from_content, detect_language_from_extension, detect_language_from_path};
+#[cfg(feature = "serde")]
+pub use extensions::extension_ambiguity_json;
+pub use extensions::{
+    detect_language_from_content, detect_language_from_extension, detect_language_from_path, extension_ambiguity,
+};
 pub use intel::types::{
     ChunkContext, CodeChunk, CommentInfo, CommentKind, DataAttribute, DataNode, DataNodeKind, Diagnostic,
     DiagnosticSeverity, DocSection, DocstringFormat, DocstringInfo, ExportInfo, ExportKind, FileMetrics, ImportInfo,

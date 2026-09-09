@@ -20,6 +20,57 @@ pub fn detect_language_from_extension(ext: &str) -> Option<&'static str> {
     include!(concat!(env!("OUT_DIR"), "/extensions_generated.rs"))
 }
 
+/// Return the assigned language and alternatives for an ambiguous file extension.
+///
+/// The extension must omit the leading dot. Matching is ASCII case-insensitive,
+/// like [`detect_language_from_extension`]. Returns `None` for unambiguous or
+/// unrecognized extensions. The assigned language matches extension detection;
+/// alternatives list other languages declared in the language definitions.
+/// This lookup does not require the corresponding parsers to be installed.
+///
+/// ```
+/// use tree_sitter_language_pack::extension_ambiguity;
+/// assert_eq!(extension_ambiguity("H"), Some(("c", &["cpp", "objc"][..])));
+/// assert_eq!(extension_ambiguity("m"), Some(("objc", &["matlab"][..])));
+/// assert_eq!(extension_ambiguity("py"), None);
+/// ```
+pub fn extension_ambiguity(ext: &str) -> Option<(&'static str, &'static [&'static str])> {
+    const MAX_EXTENSION_BYTES: usize = 32;
+    let mut buffer = [0u8; MAX_EXTENSION_BYTES];
+    if ext.len() > buffer.len() || !ext.is_ascii() {
+        return None;
+    }
+    for (index, byte) in ext.bytes().enumerate() {
+        buffer[index] = byte.to_ascii_lowercase();
+    }
+    let ext_lower = std::str::from_utf8(&buffer[..ext.len()]).ok()?;
+
+    include!(concat!(env!("OUT_DIR"), "/ambiguities_generated.rs"))
+}
+
+/// Serialize [`extension_ambiguity`] as JSON with `assigned` and `alternatives` fields.
+///
+/// Available with the `serde` feature. Returns `None` when the extension is
+/// unambiguous or unrecognized.
+///
+/// ```
+/// use tree_sitter_language_pack::extension_ambiguity_json;
+/// assert_eq!(
+///     extension_ambiguity_json("m"),
+///     Some(serde_json::json!({"assigned": "objc", "alternatives": ["matlab"]}).to_string())
+/// );
+/// ```
+#[cfg(feature = "serde")]
+pub fn extension_ambiguity_json(ext: &str) -> Option<String> {
+    extension_ambiguity(ext).map(|(assigned, alternatives)| {
+        serde_json::json!({
+            "assigned": assigned,
+            "alternatives": alternatives,
+        })
+        .to_string()
+    })
+}
+
 /// Detect language name from a file path.
 ///
 /// Extracts the file extension and looks it up. Returns `None` if the

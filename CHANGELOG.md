@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Restore the Rust `extension_ambiguity()` API and its serde-gated JSON companion to expose the
+  default language and alternatives for ambiguous file extensions. (#185)
+
 ## [1.16.2] - 2026-09-05
 
 ### Fixed
