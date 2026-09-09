@@ -4,7 +4,7 @@
 //! has its own adapter, exercised here on the shapes real PostgreSQL
 //! bootstrap scripts, Justfiles, multi-stage Dockerfiles, C headers and
 //! policy sets take.
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used)] // ~keep: a failed setup step in a test must abort loudly
 
 use tree_sitter_language_pack::{ProcessConfig, ProcessResult, StructureItem, StructureKind, process};
 
