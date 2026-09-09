@@ -5,6 +5,7 @@
 //! bootstrap scripts, Justfiles, multi-stage Dockerfiles, C headers and
 //! policy sets take.
 #![allow(clippy::unwrap_used, clippy::expect_used)] // ~keep: a failed setup step in a test must abort loudly
+#![allow(clippy::print_stdout)] // ~keep: the deep-declarator probe reports to its parent process on stdout
 
 use tree_sitter_language_pack::{ProcessConfig, ProcessResult, StructureItem, StructureKind, process};
 
@@ -499,6 +500,72 @@ fn c_header_guards_conditionals_and_linkage_blocks_are_transparent() {
             (Some("widget_large"), &StructureKind::Function, 11, 11),
             (Some("widget_free"), &StructureKind::Function, 14, 14),
         ]
+    );
+}
+
+/// Set by the parent test so the child process runs the deep-declarator probe for real.
+const C_DEEP_DECLARATOR_PROBE_ENV: &str = "TSLP_C_DEEP_DECLARATOR_PROBE";
+const C_DEEP_DECLARATOR_STARS: usize = 100_000;
+const C_DEEP_DECLARATOR_SENTINEL: &str = "c deep declarator probe completed";
+
+/// The probe itself. Ignored so a plain run never executes it in-process: a stack
+/// overflow is an abort, not a panic, and would take every other test in this
+/// binary down with it. The parent below re-executes this binary with the env var
+/// set and asks for exactly this test.
+#[test]
+#[ignore]
+fn c_deep_declarator_probe() {
+    if std::env::var_os(C_DEEP_DECLARATOR_PROBE_ENV).is_none() {
+        return;
+    }
+    let stars = "*".repeat(C_DEEP_DECLARATOR_STARS);
+    // ~keep One prototype, one variable and one typedef, each behind the same
+    // ~keep pointer chain: the prototype and the typedef walk the chain to their
+    // ~keep name, the variable walks it to learn it declares nothing.
+    let source = format!("int {stars}deep(void);\nint {stars}name;\ntypedef int {stars}alias;\n");
+    // ~keep 2 MiB is the smallest stack the library runs on (tokio spawn_blocking and the
+    // ~keep Node, Python and JVM worker threads); the default test thread is not that small.
+    let worker = std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || {
+            let result = extract(&source, "c");
+            (result.metrics.error_count, result.structure)
+        })
+        .expect("spawn probe thread");
+    let (errors, items) = worker.join().expect("probe thread must not panic");
+    assert_eq!(errors, 0, "the fixture must parse cleanly for the chain to be real");
+    assert_eq!(
+        summary(&items),
+        vec![
+            (Some("deep"), &StructureKind::Function, 0, 0),
+            (Some("alias"), &other("Type"), 2, 2),
+        ]
+    );
+    println!("{C_DEEP_DECLARATOR_SENTINEL}");
+}
+
+/// A declarator wrapped in 100,000 pointers must not abort the process.
+///
+/// The C grammar nests one `pointer_declarator` per `*`, so a name finder that
+/// recurses per level walks off a 2 MiB stack long before the depth guard the
+/// item walk shares can see it. An abort cannot be caught in-process, so the
+/// probe runs in a child and this test reads its exit status and its sentinel line;
+/// the sentinel is what stops a filtered-out or silently skipped probe from passing
+/// as a survival.
+#[test]
+fn c_deep_declarator_survives_a_two_mebibyte_stack() {
+    let exe = std::env::current_exe().expect("test binary path");
+    let output = std::process::Command::new(exe)
+        .args(["--ignored", "--exact", "c_deep_declarator_probe", "--nocapture"])
+        .env(C_DEEP_DECLARATOR_PROBE_ENV, "1")
+        .output()
+        .expect("spawn the probe child process");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success() && stdout.contains(C_DEEP_DECLARATOR_SENTINEL),
+        "the deep declarator probe did not survive (status {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
     );
 }
 

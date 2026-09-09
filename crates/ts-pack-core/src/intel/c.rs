@@ -102,34 +102,52 @@ pub(super) fn structure(root: &Node<'_>, source: &str) -> Vec<StructureItem> {
 
 /// The identifier at the bottom of a declarator chain, whatever pointers,
 /// arrays, parentheses and initialisers wrap it.
+///
+/// The chain is one grammar node per wrapper, so it is walked with an explicit
+/// stack rather than by recursion: a declarator behind 100,000 pointers is a
+/// valid parse, and a frame per pointer would overflow the 2 MiB stacks the
+/// library runs on. The search is depth first in source order, first match
+/// wins, which is the order the recursive form visited.
 fn innermost_identifier<'tree>(node: Node<'tree>) -> Option<Node<'tree>> {
-    match node.kind() {
-        "identifier" | "type_identifier" | "field_identifier" => Some(node),
-        _ => {
-            // ~keep A parenthesised declarator (`(*name)(int)`) holds its inner
-            // ~keep declarator as an unnamed child rather than a field.
-            if let Some(inner) = node.child_by_field_name("declarator") {
-                return innermost_identifier(inner);
+    let mut pending = vec![node];
+    while let Some(current) = pending.pop() {
+        match current.kind() {
+            "identifier" | "type_identifier" | "field_identifier" => return Some(current),
+            _ => {
+                // ~keep A parenthesised declarator (`(*name)(int)`) holds its inner
+                // ~keep declarator as an unnamed child rather than a field.
+                if let Some(inner) = current.child_by_field_name("declarator") {
+                    pending.push(inner);
+                    continue;
+                }
+                let mut cursor = current.walk();
+                let children: Vec<Node<'tree>> = current
+                    .named_children(&mut cursor)
+                    .filter(|child| child.kind().ends_with("declarator") || child.kind().ends_with("identifier"))
+                    .collect();
+                pending.extend(children.into_iter().rev());
             }
-            let mut cursor = node.walk();
-            let children: Vec<Node<'tree>> = node.named_children(&mut cursor).collect();
-            children
-                .into_iter()
-                .filter(|child| child.kind().ends_with("declarator") || child.kind().ends_with("identifier"))
-                .find_map(innermost_identifier)
         }
     }
+    None
 }
 
 /// The name a prototype declares: pointers may wrap the function declarator,
 /// but the declarator itself must apply to a bare identifier.
+///
+/// Iterative for the same reason as [`innermost_identifier`].
 fn prototype_name<'tree>(declarator: &Node<'tree>) -> Option<Node<'tree>> {
-    match declarator.kind() {
-        "pointer_declarator" => prototype_name(&declarator.child_by_field_name("declarator")?),
-        "function_declarator" => declarator
-            .child_by_field_name("declarator")
-            .filter(|inner| inner.kind() == "identifier"),
-        _ => None,
+    let mut current = *declarator;
+    loop {
+        match current.kind() {
+            "pointer_declarator" => current = current.child_by_field_name("declarator")?,
+            "function_declarator" => {
+                return current
+                    .child_by_field_name("declarator")
+                    .filter(|inner| inner.kind() == "identifier");
+            }
+            _ => return None,
+        }
     }
 }
 
