@@ -5,6 +5,7 @@
 //! docstrings, symbols, and diagnostics.
 
 pub(crate) mod c;
+pub(crate) mod cedar;
 pub mod chunking;
 pub(crate) mod data_extraction;
 pub(crate) mod dockerfile;
