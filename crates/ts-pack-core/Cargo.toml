@@ -6,6 +6,11 @@ license.workspace = true
 repository.workspace = true
 description = "Core library for tree-sitter language pack - provides compiled parsers for 371 languages"
 
+# ~keep This direct dependency constrains tree-sitter's WASM C shims: 0.1.8 rejects
+# ~keep tree-sitter 0.26, which is required by our published Swift static libraries.
+[package.metadata.cargo-machete]
+ignored = ["tree-sitter-language"]
+
 [features]
 default = ["dynamic-loading", "download"]
 dynamic-loading = ["dep:libloading"]
@@ -53,6 +58,7 @@ libloading = { workspace = true, optional = true }
 # ~keep depend on getrandom but don't enable it by default for wasm32-unknown-unknown.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 getrandom = { version = "0.4", features = ["wasm_js"] }
+tree-sitter-language = { workspace = true }
 
 [build-dependencies]
 cc = { workspace = true }
