@@ -402,16 +402,27 @@ fn toml_table_array_node(node: &Node, source: &str, depth: usize, truncated: &mu
     })
 }
 
+/// Join a TOML key's segments with `.`, without recursing per segment.
+///
+/// The grammar nests a `dotted_key` one level per segment, so a valid
+/// 10,000-segment key is a 10,000-level subtree. It sits inside a single pair,
+/// which is why the depth guard the tree builders share never sees it; a
+/// recursive join walked off a 2 MiB stack and aborted the process instead of
+/// producing a long string. The explicit stack below lives on the heap, so the
+/// key's length is the only cost. ~keep
 fn toml_key(node: &Node, source: &str) -> String {
-    if node.kind() == "dotted_key" {
-        let mut cursor = node.walk();
-        node.named_children(&mut cursor)
-            .map(|child| toml_key(&child, source))
-            .collect::<Vec<_>>()
-            .join(".")
-    } else {
-        strip_quotes(node_text(node, source)).to_string()
+    let mut segments = Vec::new();
+    let mut pending = vec![*node];
+    while let Some(current) = pending.pop() {
+        if current.kind() == "dotted_key" {
+            let mut cursor = current.walk();
+            let children: Vec<Node> = current.named_children(&mut cursor).collect();
+            pending.extend(children.into_iter().rev());
+        } else {
+            segments.push(strip_quotes(node_text(&current, source)));
+        }
     }
+    segments.join(".")
 }
 
 fn extract_properties(root: &Node, source: &str) -> Option<DataNode> {

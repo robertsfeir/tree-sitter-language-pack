@@ -135,3 +135,58 @@ fn json_multiple_roots_do_not_return_only_the_first() {
         "multiple roots must not yield a partial data tree"
     );
 }
+
+/// Set by the parent test so the child process runs the deep-key probe for real.
+const TOML_DEEP_KEY_PROBE_ENV: &str = "TSLP_TOML_DEEP_KEY_PROBE";
+const TOML_DEEP_KEY_SEGMENTS: usize = 10_000;
+const TOML_DEEP_KEY_SENTINEL: &str = "toml deep dotted key probe completed";
+
+/// The probe itself. Ignored so a plain run never executes it in-process: a stack
+/// overflow is an abort, not a panic, and would take every other test in this
+/// binary down with it. The parent below re-executes this binary with the env var
+/// set and asks for exactly this test.
+#[test]
+#[ignore]
+fn toml_deep_dotted_key_probe() {
+    if std::env::var_os(TOML_DEEP_KEY_PROBE_ENV).is_none() {
+        return;
+    }
+    let source = format!("{} = 1\n", vec!["a"; TOML_DEEP_KEY_SEGMENTS].join("."));
+    // ~keep 2 MiB is the smallest stack the library runs on (tokio spawn_blocking and the
+    // ~keep Node, Python and JVM worker threads); the default test thread is not that small.
+    let worker = std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || data(&source, "toml"))
+        .expect("spawn probe thread");
+    let root = worker.join().expect("probe thread must not panic");
+    assert_eq!(root.children.len(), 1);
+    let key = root.children[0].key.as_deref().expect("dotted key");
+    assert_eq!(key.split('.').count(), TOML_DEEP_KEY_SEGMENTS);
+    assert!(key.split('.').all(|segment| segment == "a"));
+    println!("{TOML_DEEP_KEY_SENTINEL}");
+}
+
+/// A valid 10,000-segment dotted key must not abort the process.
+///
+/// The TOML grammar nests one `dotted_key` node per segment, so a key builder that
+/// recurses per segment walks off a 2 MiB stack long before the depth guard the
+/// other builders share can see it. An abort cannot be caught in-process, so the
+/// probe runs in a child and this test reads its exit status and its sentinel line;
+/// the sentinel is what stops a filtered-out or silently skipped probe from passing
+/// as a survival.
+#[test]
+fn toml_deep_dotted_key_survives_a_two_mebibyte_stack() {
+    let exe = std::env::current_exe().expect("test binary path");
+    let output = std::process::Command::new(exe)
+        .args(["--ignored", "--exact", "toml_deep_dotted_key_probe", "--nocapture"])
+        .env(TOML_DEEP_KEY_PROBE_ENV, "1")
+        .output()
+        .expect("spawn the probe child process");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success() && stdout.contains(TOML_DEEP_KEY_SENTINEL),
+        "the deep dotted key probe did not survive (status {:?})\nstdout:\n{stdout}\nstderr:\n{stderr}",
+        output.status
+    );
+}
