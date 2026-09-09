@@ -1,15 +1,16 @@
 //! Declaration coverage for the code-shaped repository formats: SQL DDL,
-//! Justfiles, Dockerfiles, and C sources and headers. Their grammars name
-//! nodes the generic matcher misreads or never sees, so each has its own
-//! adapter, exercised here on the shapes real PostgreSQL bootstrap scripts,
-//! Justfiles, multi-stage Dockerfiles and C headers take.
+//! Justfiles, Dockerfiles, C sources and headers, and Cedar policies. Their
+//! grammars name nodes the generic matcher misreads or never sees, so each
+//! has its own adapter, exercised here on the shapes real PostgreSQL
+//! bootstrap scripts, Justfiles, multi-stage Dockerfiles, C headers and
+//! policy sets take.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use tree_sitter_language_pack::{ProcessConfig, ProcessResult, StructureItem, StructureKind, process};
 
 fn extract(source: &str, language: &str) -> ProcessResult {
     process(source, &ProcessConfig::new(language).all())
-        .expect("real grammar required; build with TSLP_LANGUAGES=sql,just,dockerfile,c")
+        .expect("real grammar required; build with TSLP_LANGUAGES=sql,just,dockerfile,c,cedar")
 }
 
 /// (name, kind, start_line, end_line) for each item, top level only.
@@ -499,4 +500,46 @@ fn c_header_guards_conditionals_and_linkage_blocks_are_transparent() {
             (Some("widget_free"), &StructureKind::Function, 14, 14),
         ]
     );
+}
+
+const CEDAR: &str = "\
+// leading comment with @id(\"not_a_policy\") in it
+@id(\"allow_read\")
+@note(\"first\")
+permit(principal, action == Action::\"read\", resource);
+
+@id(\"deny_delete\")
+forbid(
+  principal,
+  action == Action::\"delete\",
+  resource
+)
+when { principal.role == \"guest\" };
+
+permit(principal, action, resource);
+
+@id(\"templated\")
+permit(principal == ?principal, action, resource in ?resource);
+
+@id(\"allow_read\")
+permit(principal, action == Action::\"list\", resource) unless { resource.locked };
+";
+
+#[test]
+fn cedar_policies_are_named_by_their_id_annotation() {
+    let result = extract(CEDAR, "cedar");
+    assert_eq!(result.metrics.error_count, 0);
+    assert_eq!(
+        summary(&result.structure),
+        vec![
+            (Some("allow_read"), &other("Policy"), 1, 3),
+            (Some("deny_delete"), &other("Policy"), 5, 11),
+            (Some("templated"), &other("Policy"), 15, 16),
+            (Some("allow_read"), &other("Policy"), 18, 19),
+        ]
+    );
+    let first = &result.structure[0].span;
+    assert!(CEDAR[first.start_byte..first.end_byte].starts_with("@id(\"allow_read\")"));
+    assert!(CEDAR[first.start_byte..first.end_byte].ends_with("resource);"));
+    assert!(result.symbols.is_empty(), "Cedar emits no flat symbols");
 }
