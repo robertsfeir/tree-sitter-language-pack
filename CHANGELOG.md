@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is deferred because SwiftTreeSitter 0.25 requires the 0.25 C runtime, which conflicts
   with the newer runtime in our published static Swift library. Pin the WASM shim
   dependency `tree-sitter-language` to 0.1.7 because 0.1.8 rejects the retained runtime. (#189)
-- Regenerate bindings, fixtures, documentation, and release workflows with Alef 0.85.10;
+- Regenerate bindings, fixtures, documentation, and release workflows with Alef 0.85.11;
   upgrade Rust dependencies, including `dirs` 7 and `zstd` 0.14.
 
 ### Added
