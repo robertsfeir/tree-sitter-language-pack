@@ -6,7 +6,8 @@
 use tree_sitter_language_pack::{ProcessConfig, ProcessResult, StructureItem, StructureKind, process};
 
 fn extract(source: &str, language: &str) -> ProcessResult {
-    process(source, &ProcessConfig::new(language).all()).expect("real grammar required; build with TSLP_LANGUAGES=sql")
+    process(source, &ProcessConfig::new(language).all())
+        .expect("real grammar required; build with TSLP_LANGUAGES=sql,just")
 }
 
 /// (name, kind, start_line, end_line) for each item, top level only.
@@ -172,4 +173,59 @@ CREATE FUNCTION %s(%s) RETURNS %s;
         summary(&result.structure),
         vec![(Some("counted"), &StructureKind::Function, 0, 8)]
     );
+}
+
+const JUSTFILE: &str = "\
+set shell := [\"bash\", \"-eu\", \"-c\"]
+
+mod kyroco 'justfiles/kyroco.just'
+import 'other.just'
+
+MIX := \"/opt/homebrew/bin/mix\"
+
+# Run the proof.
+[private]
+default:
+    @just --list
+
+pre-pr *args:
+    cd {{DIR}} && ./scripts/pre-pr.sh {{args}}
+
+alias pp := pre-pr
+
+[group(\"ci\")]
+@build target=\"debug\" flag: deps compile
+    echo {{target}}
+    echo done
+
+_hidden:
+    echo hidden
+
+deps:
+    mix deps.get
+compile: deps
+    mix compile
+";
+
+#[test]
+fn justfile_recipes_aliases_and_modules_are_declarations_with_trimmed_spans() {
+    let result = extract(JUSTFILE, "just");
+    assert_eq!(result.metrics.error_count, 0);
+    assert_eq!(
+        summary(&result.structure),
+        vec![
+            (Some("kyroco"), &StructureKind::Module, 2, 2),
+            (Some("default"), &StructureKind::Function, 8, 10),
+            (Some("pre-pr"), &StructureKind::Function, 12, 13),
+            (Some("pp"), &other("Alias"), 15, 15),
+            (Some("build"), &StructureKind::Function, 17, 20),
+            (Some("_hidden"), &StructureKind::Function, 22, 23),
+            (Some("deps"), &StructureKind::Function, 25, 26),
+            (Some("compile"), &StructureKind::Function, 27, 28),
+        ]
+    );
+    let build = &result.structure[4].span;
+    assert!(JUSTFILE[build.start_byte..build.end_byte].starts_with("[group("));
+    assert!(JUSTFILE[build.start_byte..build.end_byte].ends_with("echo done"));
+    assert!(result.symbols.is_empty(), "Just emits no flat symbols");
 }
