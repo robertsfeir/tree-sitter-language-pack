@@ -1,14 +1,15 @@
 //! Declaration coverage for the code-shaped repository formats: SQL DDL,
-//! Justfiles and Dockerfiles. Their grammars name nodes the generic matcher
-//! misreads, so each has its own adapter, exercised here on the shapes real
-//! PostgreSQL bootstrap scripts, Justfiles and multi-stage Dockerfiles take.
+//! Justfiles, Dockerfiles, and C sources and headers. Their grammars name
+//! nodes the generic matcher misreads or never sees, so each has its own
+//! adapter, exercised here on the shapes real PostgreSQL bootstrap scripts,
+//! Justfiles, multi-stage Dockerfiles and C headers take.
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use tree_sitter_language_pack::{ProcessConfig, ProcessResult, StructureItem, StructureKind, process};
 
 fn extract(source: &str, language: &str) -> ProcessResult {
     process(source, &ProcessConfig::new(language).all())
-        .expect("real grammar required; build with TSLP_LANGUAGES=sql,just,dockerfile")
+        .expect("real grammar required; build with TSLP_LANGUAGES=sql,just,dockerfile,c")
 }
 
 /// (name, kind, start_line, end_line) for each item, top level only.
@@ -369,4 +370,133 @@ fn dockerfile_named_stages_nest_their_args_and_env_pairs() {
     let stage = &result.structure[2].span;
     assert!(DOCKERFILE[stage.start_byte..stage.end_byte].ends_with("COPY . /app"));
     assert!(result.symbols.is_empty(), "Dockerfile emits no flat symbols");
+}
+
+const C_SOURCE: &str = "\
+#include <stdio.h>
+#define LIMIT 42
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define FLAG
+
+struct point {
+  int x;
+  int y;
+};
+
+typedef struct point point_t;
+
+typedef struct {
+  int w;
+} bare_t;
+
+typedef struct node {
+  struct node *next;
+} node_t;
+
+union number {
+  int i;
+  float f;
+};
+
+enum color { RED, GREEN };
+
+typedef enum { LOW, HIGH } level_t;
+
+typedef int (*callback_t)(int);
+
+static int counter = 0;
+const int limit = 3;
+extern int external;
+struct point origin = {0, 0};
+int (*fnptr)(int);
+
+static inline int helper(int v) {
+  struct local { int z; };
+  int inner = v;
+  return inner;
+}
+
+int prototype(int a);
+char *pointer_prototype(const char *s);
+
+int main(int argc, char **argv) {
+  return MAX(argc, LIMIT);
+}
+";
+
+#[test]
+fn c_definitions_prototypes_aggregates_typedefs_and_macros_are_declarations() {
+    let result = extract(C_SOURCE, "c");
+    assert_eq!(result.metrics.error_count, 0);
+    assert_eq!(
+        summary(&result.structure),
+        vec![
+            (Some("LIMIT"), &other("Constant"), 1, 1),
+            (Some("MAX"), &other("Macro"), 2, 2),
+            (Some("FLAG"), &other("Constant"), 3, 3),
+            (Some("point"), &StructureKind::Struct, 5, 8),
+            (Some("point_t"), &other("Type"), 10, 10),
+            (Some("bare_t"), &other("Type"), 12, 14),
+            (Some("node_t"), &other("Type"), 16, 18),
+            (Some("node"), &StructureKind::Struct, 16, 18),
+            (Some("number"), &other("Union"), 20, 23),
+            (Some("color"), &StructureKind::Enum, 25, 25),
+            (Some("level_t"), &other("Type"), 27, 27),
+            (Some("callback_t"), &other("Type"), 29, 29),
+            (Some("helper"), &StructureKind::Function, 37, 41),
+            (Some("prototype"), &StructureKind::Function, 43, 43),
+            (Some("pointer_prototype"), &StructureKind::Function, 44, 44),
+            (Some("main"), &StructureKind::Function, 46, 48),
+        ]
+    );
+    // ~keep A macro's span stops at its text, not at the newline the grammar swallows.
+    let limit = &result.structure[0].span;
+    assert_eq!(&C_SOURCE[limit.start_byte..limit.end_byte], "#define LIMIT 42");
+    // ~keep A top-level aggregate runs through its own terminator.
+    let point = &result.structure[3].span;
+    assert!(C_SOURCE[point.start_byte..point.end_byte].ends_with("};"));
+    assert!(result.structure.iter().all(|item| item.children.is_empty()));
+    assert!(result.symbols.is_empty(), "C emits no flat symbols");
+}
+
+const C_HEADER: &str = "\
+// A guarded header.
+#ifndef WIDGET_H
+#define WIDGET_H
+
+#ifdef __cplusplus
+extern \"C\" {
+#endif
+
+#if defined(WIDGET_SMALL)
+int widget_small(void);
+#else
+int widget_large(void);
+#endif
+
+void widget_free(char *pointer);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+";
+
+#[test]
+fn c_header_guards_conditionals_and_linkage_blocks_are_transparent() {
+    let result = extract(C_HEADER, "c");
+    // ~keep The grammar pairs the `extern "C" {` brace across the `#endif` that
+    // ~keep closes its guard and reports one error node for it; the prototypes
+    // ~keep inside are parsed all the same, which is what this proves.
+    assert!(result.metrics.error_count <= 1);
+    assert_eq!(
+        summary(&result.structure),
+        vec![
+            (Some("WIDGET_H"), &other("Constant"), 2, 2),
+            (Some("widget_small"), &StructureKind::Function, 9, 9),
+            (Some("widget_large"), &StructureKind::Function, 11, 11),
+            (Some("widget_free"), &StructureKind::Function, 14, 14),
+        ]
+    );
 }
