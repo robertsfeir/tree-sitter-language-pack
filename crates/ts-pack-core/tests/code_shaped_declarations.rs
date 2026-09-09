@@ -176,6 +176,53 @@ CREATE FUNCTION %s(%s) RETURNS %s;
     );
 }
 
+#[test]
+fn sql_recovery_reads_a_schema_the_lexer_handed_over_as_a_keyword() {
+    // Shrunk from a real proof file: the first body derails the parser, which
+    // runs the function past its own closing quote and hands the next header
+    // over as `keyword_public`, `.`, then the bare name.
+    let source = "\
+    CREATE OR REPLACE FUNCTION public.engram_floor_complete(p_tenant text, p_set_id uuid)
+     RETURNS boolean
+    AS $function$
+    DECLARE
+      -- SQLSTATE 55P03 here instead of parking this tenant connection.
+                 AND  sv.card_id   = sc.id
+                 AND  sv.set_id    = sc.set_id
+             );
+
+      RETURN v_floorless = 0;
+    END;
+    $function$
+;
+    CREATE OR REPLACE FUNCTION public.engram_complete(p_tenant text, p_floor_complete boolean)
+     RETURNS text
+     LANGUAGE plpgsql
+     SECURITY DEFINER
+     SET search_path TO 'public', 'pg_catalog'
+    AS $function$
+    DECLARE
+      v_repo             text;
+    BEGIN
+      RETURN 1;
+    END;
+    $function$
+;
+";
+    let result = extract(source, "sql");
+    assert_eq!(
+        summary(&result.structure),
+        vec![
+            (Some("public.engram_floor_complete"), &StructureKind::Function, 0, 12),
+            (Some("public.engram_complete"), &StructureKind::Function, 13, 25),
+        ]
+    );
+    for item in &result.structure {
+        let text = &source[item.span.start_byte..item.span.end_byte];
+        assert!(text.starts_with("CREATE") && text.ends_with("$function$\n;"), "{text}");
+    }
+}
+
 const JUSTFILE: &str = "\
 set shell := [\"bash\", \"-eu\", \"-c\"]
 
