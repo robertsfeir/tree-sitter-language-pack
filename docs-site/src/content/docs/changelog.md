@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Propagate C# fallible-void native failures as typed exceptions while preserving their
+  native error codes and messages; narrow Java boolean returns to the C ABI width.
 - Preserve Swift declaration kinds, protocol requirements, aliases and constants; retain
   TypeScript namespace ownership and named arrow functions without duplicate constants. (#186)
 - Preserve YAML flow collections and scalar keys, TOML dotted keys and commented containers,
