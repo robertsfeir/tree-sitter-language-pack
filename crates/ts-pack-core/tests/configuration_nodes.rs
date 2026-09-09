@@ -1,4 +1,4 @@
-use tree_sitter_language_pack::{DataNode, ProcessConfig, process};
+use tree_sitter_language_pack::{DataNode, DataNodeKind, ProcessConfig, process};
 
 fn data(source: &str, language: &str) -> DataNode {
     process(source, &ProcessConfig::new(language).with_data_extraction(true))
@@ -133,5 +133,106 @@ fn json_multiple_roots_do_not_return_only_the_first() {
     assert!(
         result.data.is_none(),
         "multiple roots must not yield a partial data tree"
+    );
+}
+
+#[test]
+fn plist_dict_entries_are_keyed_by_their_key_text_and_arrays_by_position() {
+    let source = "\
+<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\">
+<array>
+  <dict>
+    <key>BundleIsRelocatable</key>
+    <false/>
+    <key>BundleOverwriteAction</key>
+    <string>upgrade</string>
+    <key>Paths</key>
+    <array>
+      <string>one</string>
+      <string>two</string>
+    </array>
+  </dict>
+</array>
+</plist>
+";
+    let root = data(source, "xml");
+    assert_eq!(root.children.len(), 1);
+    let item = &root.children[0];
+    assert_eq!(item.key.as_deref(), Some("0"));
+    assert_eq!(item.kind, DataNodeKind::Sequence);
+    assert_eq!(item.value, None);
+    assert_eq!((item.span.start_line, item.span.end_line), (4, 14));
+    let entries: Vec<(Option<&str>, Option<&str>, usize, usize)> = item
+        .children
+        .iter()
+        .map(|entry| {
+            (
+                entry.key.as_deref(),
+                entry.value.as_deref(),
+                entry.span.start_line,
+                entry.span.end_line,
+            )
+        })
+        .collect();
+    assert_eq!(
+        entries,
+        vec![
+            (Some("BundleIsRelocatable"), Some("false"), 5, 6),
+            (Some("BundleOverwriteAction"), Some("upgrade"), 7, 8),
+            (Some("Paths"), None, 9, 13),
+        ]
+    );
+    let paths = &item.children[2].children;
+    assert_eq!(paths.len(), 2);
+    assert_eq!(paths[1].key.as_deref(), Some("1"));
+    assert_eq!(paths[1].value.as_deref(), Some("two"));
+}
+
+#[test]
+fn xml_that_is_not_a_plist_keeps_its_element_paths() {
+    let root = data("<plist-like><key>Name</key></plist-like>\n", "xml");
+    assert_eq!(root.children[0].key.as_deref(), Some("plist-like"));
+    assert_eq!(root.children[0].children[0].key.as_deref(), Some("key"));
+}
+
+#[test]
+fn dotenv_assignments_are_keyed_scalars_with_values_as_written() {
+    let source = "\
+# comment KEY=IGNORED
+PLAIN=value
+export EXPORTED=1
+EMPTY=
+PLACEHOLDER=${OTHER}
+MULTI=\"line one
+line two\"
+DUP=1
+DUP=2
+";
+    let root = data(source, "dotenv");
+    let entries: Vec<(Option<&str>, Option<&str>, usize, usize)> = root
+        .children
+        .iter()
+        .map(|entry| {
+            (
+                entry.key.as_deref(),
+                entry.value.as_deref(),
+                entry.span.start_line,
+                entry.span.end_line,
+            )
+        })
+        .collect();
+    assert_eq!(
+        entries,
+        vec![
+            (Some("PLAIN"), Some("value"), 1, 1),
+            (Some("EXPORTED"), Some("1"), 2, 2),
+            (Some("EMPTY"), Some(""), 3, 3),
+            (Some("PLACEHOLDER"), Some("${OTHER}"), 4, 4),
+            (Some("MULTI"), Some("\"line one\nline two\""), 5, 6),
+            (Some("DUP"), Some("1"), 7, 7),
+            (Some("DUP"), Some("2"), 8, 8),
+        ]
     );
 }

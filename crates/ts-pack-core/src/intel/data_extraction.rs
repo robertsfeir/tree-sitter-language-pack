@@ -67,6 +67,7 @@ pub(crate) fn extract_data(root: &Node, source: &str, language: &str) -> Option<
         "caddy" => extract_caddy(root, source, truncated),
         "xml" => extract_xml(root, source, truncated),
         "dtd" => extract_dtd(root, source),
+        "dotenv" => extract_dotenv(root, source),
         _ => None,
     };
     warn_if_truncated(*truncated, "intel::data_extraction", language);
@@ -1125,6 +1126,9 @@ fn caddy_directive_node(node: &Node, source: &str) -> Option<DataNode> {
 }
 
 fn extract_xml(root: &Node, source: &str, truncated: &mut usize) -> Option<DataNode> {
+    if let Some(top) = plist_top_value(root, source) {
+        return Some(extract_plist(root, &top, source, truncated));
+    }
     let children = xml_node_children(root, source, 0, truncated);
     Some(DataNode {
         kind: DataNodeKind::Element,
@@ -1202,6 +1206,179 @@ fn xml_element_node(node: &Node, source: &str, depth: usize, truncated: &mut usi
         attributes,
         children,
         span: span_from_node(node),
+    })
+}
+
+/// The single value element inside a `<plist>` root, when the document is a
+/// property list. Decided by the root tag, not the file name: a plist is XML
+/// whose meaning lives in its `<key>` text rather than its tag names, so it
+/// is read as keys and values wherever it appears.
+fn plist_top_value<'a>(root: &Node<'a>, source: &str) -> Option<Node<'a>> {
+    let element = root.child_by_field_name("root")?;
+    if xml_tag_name(&element, source)? != "plist" {
+        return None;
+    }
+    let content = named_child_of_kind(&element, "content")?;
+    named_child_of_kind(&content, "element")
+}
+
+/// A property list as keys and values. A `dict` entry is keyed by the text
+/// of its `<key>` element and spans from that key through its value; an
+/// `array` item is keyed by its position. The containers themselves add no
+/// segment, so a dict at the top reads like a JSON object and an array at
+/// the top like a JSON array. `<string>`, `<integer>`, `<real>`, `<date>`
+/// and `<data>` carry their text as the value; `<true/>` and `<false/>`
+/// carry their tag.
+fn extract_plist(root: &Node, top: &Node, source: &str, truncated: &mut usize) -> DataNode {
+    let value = plist_value_node(top, None, DataNodeKind::KeyValue, source, 0, truncated);
+    DataNode {
+        kind: DataNodeKind::KeyValue,
+        key: None,
+        value: value.value,
+        attributes: vec![],
+        children: value.children,
+        span: span_from_node(root),
+    }
+}
+
+fn plist_value_node(
+    node: &Node,
+    key: Option<String>,
+    kind: DataNodeKind,
+    source: &str,
+    depth: usize,
+    truncated: &mut usize,
+) -> DataNode {
+    let tag = xml_tag_name(node, source).unwrap_or_default();
+    let (value, children) = match tag.as_str() {
+        "dict" => (None, plist_dict_children(node, source, depth + 1, truncated)),
+        "array" => (None, plist_array_children(node, source, depth + 1, truncated)),
+        "true" | "false" => (Some(tag.clone()), vec![]),
+        _ => (Some(xml_text(node, source).unwrap_or_default()), vec![]),
+    };
+    DataNode {
+        kind,
+        key,
+        value,
+        attributes: vec![],
+        children,
+        span: span_from_node(node),
+    }
+}
+
+fn plist_dict_children(node: &Node, source: &str, depth: usize, truncated: &mut usize) -> Vec<DataNode> {
+    let mut result = Vec::new();
+    if depth_exceeded(node, depth, truncated) {
+        return result;
+    }
+    let elements = plist_elements(node);
+    let mut index = 0;
+    while index + 1 < elements.len() {
+        let key = &elements[index];
+        if xml_tag_name(key, source).as_deref() != Some("key") {
+            index += 1;
+            continue;
+        }
+        let value = &elements[index + 1];
+        let mut entry = plist_value_node(
+            value,
+            Some(xml_text(key, source).unwrap_or_default()),
+            DataNodeKind::KeyValue,
+            source,
+            depth,
+            truncated,
+        );
+        let start = key.start_position();
+        entry.span.start_byte = key.start_byte();
+        entry.span.start_line = start.row;
+        entry.span.start_column = start.column;
+        result.push(entry);
+        index += 2;
+    }
+    result
+}
+
+fn plist_array_children(node: &Node, source: &str, depth: usize, truncated: &mut usize) -> Vec<DataNode> {
+    if depth_exceeded(node, depth, truncated) {
+        return Vec::new();
+    }
+    plist_elements(node)
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            plist_value_node(
+                item,
+                Some(index.to_string()),
+                DataNodeKind::Sequence,
+                source,
+                depth,
+                truncated,
+            )
+        })
+        .collect()
+}
+
+/// The element children of an element's content, in order.
+fn plist_elements<'a>(node: &Node<'a>) -> Vec<Node<'a>> {
+    named_child_of_kind(node, "content")
+        .map(|content| {
+            let mut cursor = content.walk();
+            content
+                .named_children(&mut cursor)
+                .filter(|c| c.kind() == "element")
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn xml_tag_name(node: &Node, source: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|c| c.kind() == "STag" || c.kind() == "EmptyElemTag")
+        .and_then(|stag| named_child_of_kind(&stag, "Name"))
+        .map(|name| node_text(&name, source).to_string())
+}
+
+fn xml_text(node: &Node, source: &str) -> Option<String> {
+    let content = named_child_of_kind(node, "content")?;
+    let mut cursor = content.walk();
+    content
+        .named_children(&mut cursor)
+        .find(|gc| gc.kind() == "CharData" || gc.kind() == "CData")
+        .map(|n| node_text(&n, source).trim().to_string())
+}
+
+/// A dotenv file is a flat list of `KEY=value` lines, so every assignment is
+/// a keyed scalar and nothing nests. The value is carried as written, quotes
+/// and placeholders included; an assignment with nothing after `=` carries
+/// an empty value rather than none, so it still reads as a scalar.
+fn extract_dotenv(root: &Node, source: &str) -> Option<DataNode> {
+    let mut children = Vec::new();
+    let mut cursor = root.walk();
+    for child in root.named_children(&mut cursor) {
+        if child.kind() == "assignment"
+            && let Some(key) = child.child_by_field_name("key")
+        {
+            let value = child
+                .child_by_field_name("value")
+                .map_or_else(String::new, |value| node_text(&value, source).to_string());
+            children.push(DataNode {
+                kind: DataNodeKind::KeyValue,
+                key: Some(node_text(&key, source).to_string()),
+                value: Some(value),
+                attributes: vec![],
+                children: vec![],
+                span: span_from_node(&child),
+            });
+        }
+    }
+    Some(DataNode {
+        kind: DataNodeKind::KeyValue,
+        key: None,
+        value: None,
+        attributes: vec![],
+        children,
+        span: span_from_node(root),
     })
 }
 
