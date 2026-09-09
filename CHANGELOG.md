@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-09-09
+
+### Changed
+
+- **Breaking (Rust):** upgrade the tree-sitter runtime from 0.26 to 0.27. Consumers using
+  `Language` with a direct `tree-sitter` dependency must upgrade that dependency to 0.27.
+  The grammar revision pins are unchanged.
+- **Breaking (Go):** append `/v2` to the module import path: use
+  `github.com/xberg-io/tree-sitter-language-pack/packages/go/v2` for this major release.
+- Regenerate bindings, fixtures, documentation, and release workflows with Alef 0.85.10;
+  upgrade Rust dependencies, including `dirs` 7 and `zstd` 0.14.
+
+### Added
+
+- Restore the Rust `extension_ambiguity()` API and its serde-gated JSON companion to expose the
+  default language and alternatives for ambiguous file extensions. (#185)
+
+### Fixed
+
+- Preserve Swift declaration kinds, protocol requirements, aliases and constants; retain
+  TypeScript namespace ownership and named arrow functions without duplicate constants. (#186)
+- Preserve YAML flow collections and scalar keys, TOML dotted keys and commented containers,
+  JSON property spans, and Terraform/HCL paths. Reject concatenated JSON documents and handle
+  deeply nested TOML keys without overflowing the stack. (#186)
+- Stage the matching ktreesitter host native library for Kotlin Android JVM tests and
+  synchronize dependency lockfiles used by documentation and generated test suites.
+
 ## [1.16.2] - 2026-09-05
 
 ### Fixed

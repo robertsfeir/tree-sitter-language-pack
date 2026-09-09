@@ -109,10 +109,10 @@ packages:
     dependency: transitive
     description:
       name: flutter_rust_bridge
-      sha256: e87d6b9ee934dcd24a128ccb2bd91905d2d5fe5c06245d6a8f5477d4907a437a
+      sha256: ec69331e2335ab4d456c0a9fc700892c2c85b72b9c0cb39df3ecfe8833d5d5c8
       url: "https://pub.dev"
     source: hosted
-    version: "2.12.0"
+    version: "2.13.0"
   freezed_annotation:
     dependency: transitive
     description:
@@ -365,10 +365,10 @@ packages:
     dependency: "direct main"
     description:
       name: tree_sitter_language_pack
-      sha256: "67c19b07842594a8bb78dff89efb43d41a53596d6ac9ddc675fcb5c53ae05af7"
+      sha256: b17c11e2b9afdb7715c4d9d09105c08633fc7c2d78380aded1a8757ce749b1de
       url: "https://pub.dev"
     source: hosted
-    version: "1.10.6"
+    version: "1.16.2"
   typed_data:
     dependency: transitive
     description:

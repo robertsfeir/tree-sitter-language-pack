@@ -54,7 +54,14 @@ kotlin {
 // dependencyResolutionManagement (FAIL_ON_PROJECT_REPOS). Re-declaring them
 // here triggers Gradle "repository was added by build file" errors.
 
+val ktreesitterVersion = "0.25.1"
+val ktreesitterHostNative by configurations.creating {
+    isCanBeConsumed = false
+    isTransitive = false
+}
+
 dependencies {
+    ktreesitterHostNative("io.github.tree-sitter:ktreesitter-jvm:$ktreesitterVersion@jar")
 
     // Jackson for JSON assertion helpers
     testImplementation("com.fasterxml.jackson.core:jackson-annotations:2.22")
@@ -82,7 +89,7 @@ dependencies {
 
     // JNA for loading the native library from java.library.path
     testImplementation("net.java.dev.jna:jna:5.19.1")
-    testImplementation("io.github.tree-sitter:ktreesitter:0.25.0")
+    testImplementation("io.github.tree-sitter:ktreesitter:$ktreesitterVersion")
 
 }
 
@@ -137,8 +144,36 @@ tasks.register("copyHostJni", Copy::class) {
     }
 }
 
+// ~keep Android's capsule class uses System.loadLibrary; its AAR only contains Android binaries.
+// Host tests need the matching JVM artifact's native library, selected by OS and architecture.
+val copyKtreesitterHostNative by tasks.registering(Copy::class) {
+    val platform = when {
+        System.getProperty("os.name").lowercase().contains("mac") -> "macos"
+        System.getProperty("os.name").lowercase().contains("win") -> "windows"
+        else -> "linux"
+    }
+    val architecture = when (val host = System.getProperty("os.arch")) {
+        "aarch64", "arm64" -> "aarch64"
+        "amd64", "x86_64" -> "x64"
+        else -> throw GradleException("Unsupported ktreesitter host architecture: $host")
+    }
+    from({ zipTree(ktreesitterHostNative.singleFile) }) {
+        include("lib/$platform/$architecture/*")
+        eachFile { path = name }
+        includeEmptyDirs = false
+    }
+    into(layout.buildDirectory.dir("ktreesitter-native"))
+    doLast {
+        check(destinationDir.resolve(System.mapLibraryName("ktreesitter")).isFile) {
+            "The ktreesitter JVM artifact does not contain a native library for $platform/$architecture"
+        }
+    }
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
+    dependsOn(copyKtreesitterHostNative)
+    val ktreesitterPath = layout.buildDirectory.dir("ktreesitter-native").get().asFile.absolutePath
 
     // Resolve the native library location (e.g., ../../target/release)
     val libPath = System.getProperty("kb.lib.path") ?: "${rootDir}/../../target/release"
@@ -163,10 +198,10 @@ tasks.withType<Test> {
             "linux"
         }
         val hostedPath = project.layout.projectDirectory.dir("src/test/resources/host-jni/$hostPlatform").asFile.absolutePath
-        systemProperty("java.library.path", "$hostedPath:$libPath")
+        systemProperty("java.library.path", listOf(hostedPath, libPath, ktreesitterPath).joinToString(File.pathSeparator))
         dependsOn("copyHostJni")
     } else {
-        systemProperty("java.library.path", libPath)
+        systemProperty("java.library.path", listOf(libPath, ktreesitterPath).joinToString(File.pathSeparator))
     }
 }
 

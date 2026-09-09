@@ -278,6 +278,11 @@ values = [
 
 [[entries]]
 relative_path = "poly.toml"
+key_path = "hooks.snapshot_include"
+values = ["rust-toolchain.toml"]
+
+[[entries]]
+relative_path = "poly.toml"
 key_path = "hooks.stages"
 values = ["pre-commit"]
 
@@ -836,11 +841,6 @@ values = ["ASYNC", "D", "S", "T201", "INP001", "RUF100"]
 relative_path = "poly.toml"
 key_path = "per-file-ignores.scripts/clone_vendors.py"
 values = ["file-too-long", "function-too-long"]
-
-[[entries]]
-relative_path = "poly.toml"
-key_path = "per-file-ignores.scripts/generate_grammar_table.py"
-values = ["function-too-long"]
 
 [[entries]]
 relative_path = "poly.toml"

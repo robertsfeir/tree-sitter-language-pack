@@ -158,7 +158,7 @@ impl<'a> Collector<'a> {
             self.exports.push(export);
         }
         if self.wanted.symbols
-            && let Some(symbol) = symbol_at(node, self.source)
+            && let Some(symbol) = symbol_at(node, self.source, self.language)
         {
             self.symbols.push(symbol);
         }

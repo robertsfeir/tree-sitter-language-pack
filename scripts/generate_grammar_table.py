@@ -19,6 +19,7 @@ import json
 import re
 import sys
 from pathlib import Path
+from types import MappingProxyType
 
 DEFAULT_TARGET_ABI = 14
 
@@ -34,16 +35,8 @@ _ABI_MARKER_SCAN_BYTES = 4096
 _LANGUAGE_VERSION_RE = re.compile(r"LANGUAGE_VERSION\s+(\d+)")
 
 
-def _display_name(lang_id: str) -> str:
-    """Convert a language identifier to a human-readable display name.
-
-    Args:
-        lang_id: Snake_case or lowercase language identifier.
-
-    Returns:
-        Title-cased display name with known acronyms preserved.
-    """
-    acronyms = {
+_DISPLAY_NAMES = MappingProxyType(
+    {
         "al": "AL",
         "asm": "ASM",
         "bsl": "BSL",
@@ -138,9 +131,21 @@ def _display_name(lang_id: str) -> str:
         "yaml": "YAML",
         "zig": "Zig",
     }
+)
 
-    if lang_id in acronyms:
-        return acronyms[lang_id]
+
+def _display_name(lang_id: str) -> str:
+    """Convert a language identifier to a human-readable display name.
+
+    Args:
+        lang_id: Snake_case or lowercase language identifier.
+
+    Returns:
+        Title-cased display name with known acronyms preserved.
+    """
+
+    if lang_id in _DISPLAY_NAMES:
+        return _DISPLAY_NAMES[lang_id]
 
     return " ".join(word.capitalize() for word in lang_id.replace("-", "_").split("_"))
 

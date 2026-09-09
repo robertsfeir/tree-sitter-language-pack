@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Run the registry-mode test apps against in-repo sources instead of public registries.
 
 Registry mode (`alef test-apps run`) resolves every package from its public registry at the
@@ -127,7 +126,7 @@ def _write_go_override(staged: Path) -> None:
     `replace` needs no checksum, so `go.sum` stays valid unmodified.
     """
     local = ROOT / "packages" / "go"
-    module = "github.com/xberg-io/tree-sitter-language-pack/packages/go"
+    module = "github.com/xberg-io/tree-sitter-language-pack/packages/go/v2"
     (staged / "go.work").write_text(f"go 1.26\n\nuse .\n\nreplace {module} => {local}\n")
 
 
@@ -226,7 +225,7 @@ TARGETS: dict[str, Target] = {
             apply_override=_write_go_override,
             verify=(
                 "go list -m -f '{{.Path}} => {{with .Replace}}{{.Dir}}{{end}}' "
-                "github.com/xberg-io/tree-sitter-language-pack/packages/go"
+                "github.com/xberg-io/tree-sitter-language-pack/packages/go/v2"
             ),
             run="go test ./... -count=1",
         ),

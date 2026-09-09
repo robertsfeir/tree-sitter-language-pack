@@ -8,9 +8,924 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
 
-## 1.14.1 - 2026-08-04
+## [2.0.0] - 2026-09-09
+
+### Changed
+
+- **Breaking (Rust):** upgrade the tree-sitter runtime from 0.26 to 0.27. Consumers using
+  `Language` with a direct `tree-sitter` dependency must upgrade that dependency to 0.27.
+  The grammar revision pins are unchanged.
+- **Breaking (Go):** append `/v2` to the module import path: use
+  `github.com/xberg-io/tree-sitter-language-pack/packages/go/v2` for this major release.
+- Regenerate bindings, fixtures, documentation, and release workflows with Alef 0.85.10;
+  upgrade Rust dependencies, including `dirs` 7 and `zstd` 0.14.
+
+### Added
+
+- Restore the Rust `extension_ambiguity()` API and its serde-gated JSON companion to expose the
+  default language and alternatives for ambiguous file extensions. (#185)
+
+### Fixed
+
+- Preserve Swift declaration kinds, protocol requirements, aliases and constants; retain
+  TypeScript namespace ownership and named arrow functions without duplicate constants. (#186)
+- Preserve YAML flow collections and scalar keys, TOML dotted keys and commented containers,
+  JSON property spans, and Terraform/HCL paths. Reject concatenated JSON documents and handle
+  deeply nested TOML keys without overflowing the stack. (#186)
+- Stage the matching ktreesitter host native library for Kotlin Android JVM tests and
+  synchronize dependency lockfiles used by documentation and generated test suites.
+
+## [1.16.2] - 2026-09-05
+
+### Fixed
+
+- **`process()` returns a `ProcessResult` object again in Python, so attribute access works.**
+  In 1.16.1 the generator emitted `options.ProcessResult` as `class ProcessResult(TypedDict,
+  total=False)`, which is a type annotation and not a runtime class -- `process()` therefore handed
+  back a plain `dict`, and every documented access (`result.language`, `result.chunks`,
+  `result.metrics.total_lines`) raised `AttributeError`. Only Python was affected; the TypedDict
+  path existed in no other binding, so the same call in Node, Go, Ruby or Java kept returning a
+  real object throughout. `ProcessResult` is a `@dataclass(frozen=True, slots=True)` again, as it
+  was before 1.16.1 and as every sibling binding already models it. (#183)
+- **The generated e2e suites assert against the shape their binding actually returns.** Two
+  backends were broken by one generator-level disagreement, in which the e2e emitter and the
+  binding emitter held different ideas about the shape of a value they share. In Python, 72 of the
+  523 tests failed because the emitter wrote attribute assertions (`result.language == "python"`)
+  against a value the binding emitter was generating as a dict. In TypeScript, 18 of the 37
+  `process` tests failed because the emitter wrote `String(e.kind).includes("Function")` against
+  `kind`, which is an object -- `String({ type: "Function" })` is `"[object Object]"`, so every
+  structure-kind assertion evaluated false and reported it as the uninformative `expected false to
+  be true`. Both emitters now read the value the way the binding presents it -- the dataclass
+  attribute in Python, `e.kind?.["type"] === "Function"` in TypeScript -- and both suites are 523
+  passed / 0 failed. (#182)
+
+### Changed
+
+- Regenerated all bindings, stubs, scaffolding, READMEs, test apps and e2e suites on alef 0.84.1
+  (from 0.82.2). 0.82.1 deleted the TypedDict path from the Python binding emitter and 0.75.0
+  fixed the e2e emitter, so this is the first release carrying both. 0.84.1 also makes generation
+  reproducible across runs, which clears the 459 spurious TypeScript snippet-compile failures the
+  0.84.0 line reported.
+
+### Note on the npm package
+
+`@xberg-io/tree-sitter-language-pack` skipped both 1.16.0 and 1.16.1 -- npm's latest is still
+1.15.8 -- for two different reasons. 1.16.0 never got past `Validate version consistency`, the
+unrun `task version:sync` recorded in the 1.16.1 notes below. 1.16.1 cleared that gate and then
+failed `E2E gate — Node` on the 18 TypeScript failures above; that job blocks the npm publish, so
+the package never reached the registry. The wasm package is gated separately and did ship 1.16.1.
+1.16.2 is the first release in which both gates pass.
+
+### Note
+
+- 1.16.2 is a fix-only release. The two defects above landed together in 1.16.1 and are the whole
+  content of this one; no grammar pins moved.
+
+## [1.16.1] - 2026-09-01
+
+### Fixed
+
+- **The test-app pin check could no longer match the two alef-generated installers, so the release
+  gate was permanently blocked rather than merely stale.** The 0.79.5 regen moved `test_apps/php`'s
+  pin out of the `VERSION="${1:-...}"` default into its own `PINNED_VERSION=` assignment and
+  switched both installers' shell literals from double to single quotes; the checker's patterns
+  matched nothing, and `--fix` therefore could not repair them either. The patterns are now
+  quote-agnostic and line-anchored, so a future template change still surfaces loudly as a
+  no-match instead of silently passing.
+- **`task version:sync` was never run for 1.16.0**, leaving the dart, elixir, kotlin_android and
+  swift_e2e test-app manifests plus the plugin's own version source pinned at 1.15.12.
+- **The plugin publish jobs no longer report success having published nothing.** Both jobs probe
+  the registry for the *release* version while uploading an artifact carrying the plugin's own
+  version, and neither depended on version validation. In v1.16.0 the npm job took a 403 for
+  republishing 1.15.12 and still concluded success, and the PyPI job skipped an existing 1.15.12.
+  Both now assert the bundle matches the release before uploading.
+- Completed the alef regeneration interrupted in the 1.16.0 cycle, which had left 18 generated
+  files stale.
+
+### Note
+
+- v1.16.0 reached no registry; 1.16.1 is the first complete 1.16 release.
+
+## [1.16.0] - 2026-08-31
+
+### Added
+
+- Scoop is now a live release channel alongside Homebrew: a release publishes a Scoop manifest for
+  the CLI, and the install instructions cover it. The channel was inert until now because `scoop`
+  was held out of the workflow's `available-targets` -- alef only gained the target after v0.79.2,
+  and naming one it does not recognise hard-errors the whole publish pipeline. The pinned alef is
+  now 0.79.5, which carries it.
+
+### Changed
+
+- Refreshed 10 grammar pins to their upstream latest: `c3`, `cedar`, `cedarschema`, `cfml`,
+  `dotenv`, `foam`, `mlir`, `nginx`, `sysml` and `twig`. Parsing behaviour for those languages
+  follows upstream. `abl` is deliberately held back -- upstream's newer `highlights.scm` references
+  nodes its own `parser.c` does not define, and the grammar exceeds the regeneration threshold, so
+  a bump fails query compilation.
+
+### Fixed
+
+- The grammar table generator no longer emits a plausible-looking wrong answer when parsers are
+  missing. `_grammar_abi` fell back to the default ABI for any parser it could not read, so running
+  the generator against an incomplete `parsers/` tree -- what a `TSLP_LANGUAGES`-scoped clone
+  leaves behind, since it prunes rather than filters -- silently rewrote the published ABI column
+  for every language. It now fails, naming the count and the first ten missing parsers.
+
+## [1.15.11] - 2026-08-28
+
+### Changed
+
+- **Refreshed 26 grammar pins to upstream latest.** `apex`, `avro`, `cfml`, `dotenv`, `elisp`,
+  `fish`, `gitcommit`, `json`, `magik`, `matlab`, `mlir`, `pkl`, `racket`, `rego`, `robot`, `roc`,
+  `scala`, `sflog`, `soql`, `sosl`, `sourcepawn`, `spicedb`, `swift`, `sysml`, `tmux`, and `twig`.
+  `sflog`/`soql`/`sosl`/`apex` share one upstream monorepo and therefore one revision. The
+  remaining 344 grammars were already current.
+
+- **Refreshed dependencies.** `cargo upgrade --incompatible` reported all 58 workspace packages
+  already at their latest versions, so only `Cargo.lock` and `e2e/rust/Cargo.lock` moved. Python
+  (gitpython, idna, packaging, pygments, pyrefly), Node (pnpm 11.24.0 plus 35 workspace packages),
+  PHP (phpunit 13.x line), and Ruby (activesupport, csv, json, rubocop, rubocop-performance,
+  sorbet-runtime) were taken to latest. C#, Elixir, and Swift re-resolved to identical lockfiles --
+  they were already current.
+
+### Note on the `abl` pin
+
+`abl` had an upstream update available and it was **deliberately not taken**. At
+`e5a40fd0dd`, upstream's own `queries/highlights.scm` matches `(outer_join)`, a node type that
+its committed `src/parser.c` and `src/node-types.json` at that same revision do not define.
+`abl` is one of two grammars whose committed `parser.c` we ship as-is rather than regenerate
+(99 MB, above what standard runners can regenerate), so we cannot resolve the mismatch by
+regenerating from `grammar.js` the way we can elsewhere. Taking the bump made
+`query_compilation` fail with `Invalid node type "outer_join"`, so the pin stays at
+`5844930892`. This is a hold at a known-good revision, not a downgrade.
+
+### Note on the Dart `freezed` pin
+
+`dart pub upgrade --major-versions` proposes `freezed ^4.0.0-dev.3`. That is a prerelease, and
+the `4.0.0` stable release requires Dart SDK >= 3.13.0 while this package declares
+`sdk: '>=3.11.0 <4.0.0'`. Raising the SDK floor is a breaking change and does not belong in a
+patch release, so `freezed` stays on the `^3.2.5` stable line and `pubspec.lock` is unchanged.
+
+## [1.15.10] - 2026-08-27
+
+### Fixed
+
+- **`task alef:sync` now runs the full version sync chain.** It ran `alef sync-versions` alone,
+  which reaches the binding manifests but not the registry test-app pins or the plugin version
+  pin. It is also the only sync task `task --list-all` surfaces, because `version:sync` lives in
+  an internal included taskfile -- so the discoverable entry point was the incomplete one, and
+  releases propagated through it stranded the plugin pin a version behind.
+
+### Note on 1.15.9
+
+1.15.9 was tagged but never published to any registry. Its publish run aborted on the
+`sync_plugin_version.py --expect` gate, because at that tag `Cargo.toml` was 1.15.9 while
+`plugin/.ai-rulez/config.toml` was still 1.15.8 -- the drift the fix above prevents. 1.15.10
+supersedes it; no artifact for 1.15.9 exists on crates.io, PyPI or npm.
+
+## [1.15.9] - 2026-08-25
+
+### Changed
+
+- Regenerated all language bindings on alef 0.68.0.
+
+### Fixed
+
+- **The plugin version gate now runs on the commits that cause drift, and blocks the release when it
+  finds any.** `scripts/sync_plugin_version.py --check` was correct and `CI Plugin` ran it, but
+  `ci-plugin.yaml`'s `paths:` filter did not list `Cargo.toml` — and a release commit bumps
+  `Cargo.toml` and usually nothing under `plugin/`. The 1.15.7 and 1.15.6 release commits match zero
+  paths in the old filter, so the gate was skipped on exactly the commits that strand `plugin/` a
+  release behind. Being in sync at 1.15.8 was luck: that one commit happened to touch `plugin/` too.
+
+  `Cargo.toml` and `.task/version.yml` are now in the filter, so any core bump re-runs the gate. And
+  `sync_plugin_version.py` gains `--expect <version>`, asserting core and plugin both equal the
+  version being released; `publish.yaml`'s `validate-versions` job runs it against the tag, so a
+  drifted plugin fails the release instead of shipping a bundle that lags the version it claims to be.
+
+## [1.15.8] - 2026-08-23
+
+### Fixed
+
+- **The plain-Java artifact reaches Maven Central again.** It was the only registry still stuck at
+  1.14.3: every 1.15.x publish skipped `Publish Maven package`, because the `E2E gate — Java` it
+  sits behind failed first on 8 assertions of the shape `expected: <null> but was: <[]>`.
+
+  The cause was a disagreement inside each generated Java record. A component backed by a Rust
+  `Vec` carrying `#[serde(default, skip_serializing_if = "Vec::is_empty")]` was emitted as
+  `@Nullable`, and the canonical constructor stored whatever it was handed — `null` included —
+  while the Jackson builder defaulted the same component to `List.of()`. A record built through
+  the builder, or round-tripped through JSON, therefore never compared equal to the same record
+  built through the constructor. Regenerating against **alef 0.67.2** drops `@Nullable` on those
+  components and adds a compact constructor normalizing `null` to an empty collection, so both
+  construction paths agree. Affected records: `DataNode`, `DocstringInfo`, `ImportInfo`,
+  `ProcessResult`, `StructureItem`.
+
+- **The hand-written Java unit tests asserted the old, wrong contract.** They required such a
+  component to arrive as `null`; the Rust fields behind them are plain `Vec`, never
+  `Option<Vec>`, so empty is the truthful representation. They now assert
+  `assertEquals(List.of(), ...)`, which fails on `null` as well as on a non-empty list — the
+  assertions were tightened, not relaxed to accept either shape. `mvn test` in `packages/java`
+  reports 150 tests, 0 failures, 0 errors.
+
+### Added
+
+- **Prerelease mode for the registry-mode test apps.** `task test-apps:prerelease:run` (and
+  `:verify`, `:status`, `:clean`) stages a throwaway copy of each `test_apps/` app under
+  `.prerelease/` and redirects its dependency resolution at the in-repo package source, so the
+  suite is runnable between a version bump and the publish — the window in which the pinned
+  version exists on no registry and `alef test-apps run` cannot resolve anything. Covers rust,
+  go, python, ruby, dart, elixir and swift; `status` names the remaining targets and why each
+  needs a built artifact rather than a source path.
+
+- **`scripts/check_test_app_pins.py` — a gate that fails when a test app is pinned to a release
+  other than the one being built.** It re-derives all 18 pins across every `test_apps/` app plus
+  the `alef.toml` registry pins from `Cargo.toml`, deliberately independent of alef, so a change
+  in what `alef sync-versions` is willing to write surfaces as a failure instead of as silent
+  drift. A pattern that matches nothing is an error, not a pass — that was the Dart failure mode.
+  `--fix` repins everything; `--release X` checks against the version being published and also
+  catches a `Cargo.toml` that disagrees with the tag.
+
+  Wired in three places: `task version:sync` repins after `alef sync-versions`, the `Check version
+  sync` CI step gates every push, and the publish workflow's `validate-versions` job gates the
+  release itself against the tag. Also exposed as `task test-apps:check-pins` / `:fix-pins`.
+
+- **`scripts/sync_zig_zon_hashes.py` — regenerates and verifies the `test_apps/zig/build.zig.zon`
+  package hashes from the tarballs their URLs name.** A Zig package hash is a content digest, so
+  it cannot be derived from a version string the way every other test-app pin can; the only
+  reproducible source is `zig fetch <url>`, which prints the exact hash Zig will demand. `--fix`
+  rewrites them, the default verifies. Assets that 404 are reported as not-yet-published rather
+  than as failures, which is the normal state between a version bump and its publish, so the
+  check is safe to run at any point in the release cycle. Exposed as
+  `task test-apps:check-zig-hashes` / `:fix-zig-hashes` and wired into the `ci-zig` job — the only
+  job with a Zig toolchain. Because the digest only exists once the release has published its Zig
+  assets, `--fix` runs *after* a publish, never during release prep.
+
+- **The publish workflow now refreshes the Zig package hashes itself.** A new
+  `refresh-zig-package-hashes` job runs after `publish-zig` — the earliest point at which the
+  tarballs the digests are taken over exist — recomputes every hash and commits
+  `test_apps/zig/build.zig.zon` back to `main`, modelled on the Swift
+  `update-swift-package-manifest` job. Catching the drift only made the manual `--fix` step
+  forgettable again; this removes the step. The job cannot break a release that would otherwise succeed: nothing depends
+  on it, it is `continue-on-error`, and it commits one file or none. It skips when `main` has
+  already moved to a version this release did not publish, and reports every outcome — refreshed,
+  already current, skipped, failed — in the run summary, since `continue-on-error` would
+  otherwise let a failure pass unnoticed. `--require-published` is new on the script for this
+  caller: after a successful publish a 404 is a missing upload, not the pre-publish window, and
+  is a failure rather than a skip.
+
+### Fixed
+
+- **`test_apps/zig` could not build at all — its five package hashes had been stale since 1.14.3.**
+  `alef sync-versions` repoints each `.url` at the release being cut, but a Zig package hash is a
+  content digest over the fetched tarball, so nothing recomputed it and all five sat at the 1.14.3
+  values while the URLs advanced to 1.15.7. `zig build` failed outright:
+
+  ```text
+  error: hash mismatch: manifest declares tree_sitter_language_pack-1.14.3-jCz0Y85sQQ...
+  but the fetched package has tree_sitter_language_pack-1.15.7-jCz0Y86TSQ...
+  ```
+
+  This is not the cosmetic staleness it looks like — the declared hashes are byte-identical to the
+  real 1.14.3 tarball hashes, so every release from 1.15.0 to 1.15.7 shipped an app that resolves
+  nothing. Nothing reported it because no workflow builds `test_apps/zig`: `ci-zig` builds
+  `packages/zig` from the working tree and `ci-e2e` runs `e2e/zig`, so the one app that resolves
+  these URLs was never exercised. All five are regenerated via `zig fetch`, and `ci-zig` now
+  verifies them.
+
+- **Five registry-mode test apps were validating an already-published release, not the one being
+  built.** `test_apps/{elixir,swift_e2e,php}` were pinned at 1.15.1 and
+  `test_apps/{dart,kotlin_android}` at 1.15.2, against a 1.15.7 tree. Each gate passed — it
+  proved the *old* release still installs, which is not what a registry-mode gate is for.
+  All five are now repinned to the release being built.
+
+  The cause is not the matched-nothing regex fixed for Dart below. Every one of these five sync
+  rules does match its file. `alef sync-versions` reaches these paths through its catch-all
+  branch, which refuses to rewrite a file that carries no alef provenance marker on the grounds
+  that it reads as hand-written; it emits a `WARN` naming each skipped path and exits 0. So the
+  rules looked applied and never were. `alef.toml`'s own
+  `[crates.e2e.registry.packages.*]` pins are skipped for the same reason.
+
+  Compounding it, the `Check version sync` CI step diffs only `packages/` and `crates/`, so
+  `test_apps/` drift was outside the gate's scope even when sync did rewrite it.
+
+- The `test_apps/dart/pubspec.yaml` version-sync rule required a caret the generated pubspec does
+  not contain, so it matched nothing. Fixing the rule was necessary but not sufficient: the file
+  is one of the five skipped by the catch-all branch above, so it stayed at 1.15.2 afterwards.
+
+## [1.15.7] - 2026-08-23
+
+### Fixed
+
+- **Regenerated against alef 0.66.0** (from 0.64.0, via 0.65.0). This clears the Swift E2E gate
+  failure that blocked the v1.15.6 release: `is_empty` on a non-optional array reached through an
+  optional parent emitted a `Bool?` into `XCTAssertTrue`, which does not typecheck, so the gate
+  could never pass and every publish job downstream of it was skipped. The generated assertion now
+  coalesces (`?? true`). `alef verify --exit-code` returns 0 against the regenerated tree.
+- Generated documentation snippets omit the `level:` front-matter key instead of emitting
+  `level: null`, and every backend now orders IR items before emission — both are deliberate
+  changes in alef 0.65.0/0.66.0 and account for the bulk of the regeneration diff.
+
+### Fixed
+
+- **A failed publish can no longer announce itself as a successful release.**
+  `announce-discord` gated on `!contains(needs.*.result, 'failure')`, which is satisfied when
+  every dependency is *skipped* -- the exact shape of the v1.15.5 run, where all 13 publish jobs
+  skipped and the release reached zero registries. It now additionally requires
+  `release-finalize` (the job that asserts every enabled target actually published) to have
+  succeeded.
+- **`publish-wasm` now genuinely waits on `publish-node`.** `publish-node` was listed in its
+  `needs:` but never restated in its `if:`; because the job opens with `always()`, the `needs:`
+  entry alone gated nothing and WASM could publish to npm after the node publish had failed. The
+  gate is deliberately negative-form (`!= 'failure'`) so a legitimately skipped `publish-node`
+  -- npm already at this version, or node not among the release targets -- does not cascade into
+  skipping WASM.
+
+- **68 of the 85 files `alef verify` reported frozen are now recorded as alef-owned.** Every one
+  of them is a create-once seed, so plain `alef adopt` refuses them and the report's own remedy is
+  unreachable without `--clobber-create-once-seeds`. Only the files that already match generated
+  output byte-for-byte were adopted, so no content changed: 66 are recorded in
+  `.alef-ownership.toml` (formats that cannot carry a marker), and `packages/go/go.mod` plus
+  `packages/zig/build.zig.zon` gained the marker header. The 17 left frozen all differ from
+  generated output and need a content decision -- notably `packages/java/checkstyle.xml`, whose
+  generated form reverts the `${config_loc}` + `optional="false"` SuppressionFilter fix, and
+  `checkstyle-suppressions.xml`, whose generated form drops the NativeLib `LineLength`
+  suppression. `alef verify` stays red on those 17.
+- **`task docs:snippets:validate:lang` runs again.** It invoked `alef snippets validate`, a
+  subcommand that does not exist (`alef snippets` has `list`, `check`, `parse`, `audit`, `gaps`),
+  so the target could only ever fail with `unrecognized subcommand`. It now calls
+  `alef snippets check --strict --cache off --lang {{.LANGUAGES}}`, matching
+  `docs:snippets:validate` with the per-language filter added. The `--snippets` path is dropped
+  because `check` reads `[workspace.docs.snippets]`, and `LEVEL` is dropped because `check` has no
+  level flag -- each validator picks the deepest level its toolchain supports.
+- **`alef verify` no longer reports 8,415 stale files.** `alef all` ran at ada0fac4e and the
+  1.15.6 version bump landed after it at e9816afda; `alef.toml` is a hashed generation input, so
+  every generated file was stamped against pre-bump inputs and nothing re-stamped them. The tree
+  is regenerated after the bump, which rewrites the `alef:hash:` line in ~8,380 files. The
+  remaining diffs are real drift the earlier regen never covered: all of `test_apps/*` (`alef all`
+  does not run the test-apps stage -- `alef test-apps generate` is a separate command), plus the
+  `packages/*/README.md` version strings. Regeneration order is now bump-then-generate; running
+  `alef all` before `alef sync-versions` re-opens this.
+- **`Validate (Lint & Format)` no longer fails on every release commit.** The job passed
+  `python-extra-projects: packages/python` to the shared validate workflow, which runs
+  `uv pip install -e packages/python` -- a maturin build of `crates/ts-pack-core-py`, and so a run
+  of `crates/ts-pack-core/build.rs`. That job never downloads the `language-parsers` artifact, so
+  `parsers/` is empty and build.rs falls through to the `parser-sources-<version>.tar.zst` release
+  asset for the version in `Cargo.toml` -- which does not exist yet on a release commit, because
+  the version is always bumped before its release is published. Run 32562369389 (v1.15.6) died on
+  that 404 at step 9 of 32, so `Format check` and `Lint` never ran at all. The input is dropped:
+  its stated purpose (letting pyrefly resolve `tree_sitter`) was already satisfied by the root dev
+  group in `pyproject.toml`, and `._native` resolves from the checked-in `_native.pyi` stub, so
+  `pyrefly check packages/python` reports 0 errors without the wheel being built.
+- **Rust snippet validation no longer downloads parser sources.** The `rust` snippet session now
+  sets `TSLP_OFFLINE=1`. Its `cargo check` builds ts-pack-core through a path dependency and so
+  runs the same build.rs against the same empty `parsers/` tree -- the identical 404 on a release
+  commit, one step later in the same job. `TSLP_LANGUAGES` is unset there, so no grammar is
+  compiled into that check either way; skipping the sources changes nothing it validates.
+- Quick Start's kotlin-android `process` and `quickstart` tabs now import the generated corpus
+  (`generated/kotlin-android/process/config_all_python.md` and
+  `generated/kotlin-android/parsing/parsing_python_function.md`) instead of two hand-written
+  stand-ins. Those stand-ins were kept back in 064e3c325 because the generated twins failed with
+  `unresolved reference 'io'`; that classpath defect was fixed today (651ddbac1), so the
+  stand-ins were deleted. Not re-verified with a session-based `alef snippets check` run -- watch
+  the next CI run for kotlin_android snippet failures.
+
+### Changed
+
+- `alef.toml` now documents next to `[workspace.docs.snippets] dirs` why `docs-site/src/snippets/
+  cli/*.md` stay outside the validated snippet tree: the CLI is not an alef binding target, so no
+  generated/cli directory can exist for them to migrate into. This was previously only implied by
+  their absence from `dirs` -- nothing recorded that the gap was deliberate.
+
+## [1.15.6] - 2026-08-22
+
+### Fixed
+
+- Quick Start docs import kotlin-android's `download/prefetch_languages.md` snippet instead of
+  `download_single_language.md`. The latter no longer exists: excluding the download family from
+  the kotlin_android target (it sits behind ts-pack-core's opt-in `download` feature, which the
+  JNI crate does not enable) removed it, breaking the Astro build with UNRESOLVED_IMPORT. This
+  mirrors what wasm — excluded for the same reason — already did.
+- **The Docker image builds again (cc140342d, previously unreleased).** `Publish Docker Image`
+  for v1.15.5 failed on both architectures at `apk add ... python3=3.12.13-r0`: Alpine's
+  repository only ever carries the current revision of a package, so an exact `-rN` pin stops
+  resolving the moment a security bump lands and the old revision is deleted. The pins are now
+  fuzzy (`python3=~3.12`), which keeps the major.minor the base image already fixes while
+  letting the revision float. Note that pinning the base image by digest is not a substitute:
+  `apk --no-cache` fetches the package index over the network at build time, so a
+  digest-identical `rust:1.95-alpine3.22` still fails on the old exact pins today.
+
+- **Go snippets are validated against a library that exists.** All 521 of them failed in the
+  validate job with `ld: cannot find -lts_pack_core_ffi`. The `-L` path was right; nothing had
+  ever put a library behind it. `binding.go` links `${SRCDIR}/.lib/<platform>`, `.lib/` is
+  gitignored, and the validate job builds no binding packages -- so `go build ./...`, which is
+  what `compile`-level validation runs, could not link. The go snippet session now has a
+  `before` hook (`scripts/stage_go_native.sh`) that builds `ts-pack-core-ffi` and stages it
+  there, the same artifact `ci-e2e.yaml`'s Go job restores by hand. `timeout_secs` went from
+  120 to 900 because the same budget bounds `before` hooks, and a cold cargo build does not fit
+  in two minutes.
+
+- **Java snippets are compiled against a built package.** All 521 were `Unavailable` in the same
+  run, which under `strict` fails the run exactly as a `Fail` does -- `has_incomplete_coverage`
+  counts `Skip`, `Unavailable` and `Downgraded`. The Java validator builds its classpath from
+  `<pom dir>/target/{classes,test-classes,dependency/*.jar}` and nothing had built any of it, so
+  the session now runs `mvn compile` and `mvn dependency:copy-dependencies` first. That is a
+  different artifact and a different build from the Go fix above, not one change covering both.
+  513 of the 521 now compile; the remaining 8 are an upstream alef defect, not an environment
+  gap -- see Known issues.
+
+- **wasm/typescript snippets are type-checked against a package that has type declarations.**
+  All 511 were `Unavailable` with "Cannot find module '@xberg-io/tree-sitter-language-pack-wasm'"
+  -- the TypeScript validator resolves that module through the manifest's `types` field
+  (`pkg/nodejs/ts_pack_core_wasm.d.ts`), which only exists after a `wasm-pack build`, and `pkg/`
+  is gitignored. The wasm snippet session now runs `scripts/stage_wasm_types.sh`, which builds
+  with `TSLP_LANGUAGES=mojo,nim,norg` -- all three are wasm32-unbuildable and already skipped by
+  `build.rs`, so the build needs no wasi-sdk and finishes in well under a minute, and the
+  generated public API surface does not vary with which grammars are statically linked in.
+
+- **kotlin_android snippets are compiled against a built package.** All 521 were `Unavailable`
+  with `unresolved reference 'io'` -- the Kotlin validator resolves its classpath through
+  Gradle's own task model, which reports `compileDebugKotlin`'s `destinationDirectory` whether
+  or not anything has been compiled into it, and nothing had. The session now runs
+  `scripts/stage_kotlin_android_sdk.sh`, which writes `local.properties` itself (alef's snippet
+  runner does not pass ANDROID_HOME/ANDROID_SDK_ROOT through to session commands) and then
+  compiles. `[crates.kotlin_android]` also gained the same `exclude_functions` list `[crates.wasm]`
+  already has: the 10 `download`-family snippets fail for the identical reason wasm's do (the
+  feature isn't enabled for this target), so they are excluded from generation entirely rather
+  than validated against a package that can't have them. 511 of the 521 now compile against a
+  built package locally; the remaining 10 need a fixture regenerate to pick up the exclusion,
+  which is out of scope for this change.
+
+- **zig snippets are validated with a zig toolchain, then linked against a built FFI library.**
+  All 521 were `Unavailable` with "zig toolchain not found" -- the validate job never installed
+  one; `ci.yaml` now passes `setup-zig: true` to `reusable-validate.yml@v1`, which gained the
+  input upstream. That alone was not enough: compile-level zig validation links a real
+  executable (the generated per-snippet `build.zig` calls `b.addExecutable` +
+  `b.default_step.dependOn`), so it also needs `ts-pack-core-ffi` built at
+  `packages/zig/build.zig`'s default `-Dffi_path` (`target/release`). The session now runs
+  `scripts/stage_zig_ffi.sh` first, mirroring `stage_go_native.sh`'s FFI build. All 521 now pass.
+
+### Known issues
+
+- **8 generated Java snippets reference an exception class the binding never declares.**
+  `download_invalid_language`, `error_empty_language_name`,
+  `error_handling_get_language_empty_string`, `error_handling_unknown_language`,
+  `parse_empty_language`, `process_unknown_language`, `get_language_unknown` and
+  `get_parser_unknown` all `catch (TreeSitterLanguagePackException ...)`, which does not exist in
+  `packages/java` and is not referenced anywhere else in this repo. Alef derives that name twice
+  and disagrees with itself: the binding emitter uses
+  `backends::java::naming::exception_class_name`, which suffixes the *raw FFI* class and yields
+  `TreeSitterLanguagePackRsException`, while `e2e/codegen/java/snippet.rs` re-derives it as
+  `format!("{simple_class_name}Exception")` from the *facade* class, whose `Rs` suffix has been
+  stripped. No build step can close this, and hand-editing the snippets is pointless because the
+  same job regenerates them and gates on the diff. Until alef is fixed the Java session keeps 8
+  `Unavailable` results and the validate job stays red.
+
+- **`CI Sanitize` no longer instruments third-party C it cannot link.** The job injected the
+  sanitizer flags through `CFLAGS_x86_64_unknown_linux_gnu`, on the stated assumption that a
+  target-scoped variable leaves host build scripts alone. It does not: cc-rs keys that variable
+  on the triple alone, and on a Linux x86_64 runner the host triple *is*
+  `x86_64-unknown-linux-gnu`, so the flags also instrumented the C in `zstd-sys` and `ring` --
+  both build-dependencies of `ts-pack-core`, whose objects are linked into its build-script
+  binary. Cargo withholds RUSTFLAGS from host units when `--target` is passed, so that link
+  never received the `-lasan`/`-lubsan` the job adds and died with undefined `__asan_*` /
+  `__ubsan_*` symbols while linking `build_script_build`, before a single grammar was compiled.
+  `build.rs` now reads `TSLP_GRAMMAR_CFLAGS` and applies it to the vendored grammar C/C++ on the
+  static-link path only, which is the one place the host/target split is expressible on stable.
+
+- **The e2e drift gate no longer depends on which formatters a machine happens to have.**
+  `alef e2e generate` ran `ruff` for python and `pnpm dlx oxfmt` for node and wasm. The
+  validate job has neither -- it sets up python, java, go, ruby, dart and elixir, and the
+  reusable workflow has no `setup-node` input -- so alef logged `skipped -- executable not
+  found`, emitted unformatted suites, and `git diff --exit-code` failed on 45 files that were
+  correct on every developer machine. All three now go through `poly`, which the job installs
+  before the generate step and which bundles the same engines.
+
+- **The Zig `get_language` test no longer pins the transport of an unknown-language failure.**
+  With the compile error fixed the suite ran for the first time and the last test failed:
+  `get_language` on an unknown name returned `error.Download`, not `error.LanguageNotFound`.
+  Both are documented outcomes -- the manifest lookup falls back to a fetch, and CI cannot
+  reach the release artifacts for the version under test -- so the test now asserts the
+  invariant, that no language is handed back.
+
+- **Five CI gates that had never actually executed.** Every one was masked by an earlier job
+  failing or being cancelled, so all five failures surfaced at once the first time the gates
+  ran.
+  - The Zig package tests called `has_parser` on the result of `new_language_registry()`
+    without `try`; that function returns `error{UnknownFfiError}!LanguageRegistry`, so both
+    Zig jobs failed to compile.
+  - `packages/kotlin-android/.../Language.kt` was a pre-alef-0.61 handle wrapper. `Language`
+    is a `kotlin_android` capsule type, so alef stopped emitting the wrapper, but it does not
+    delete files it no longer generates -- the stale class stayed on disk with a `close()`
+    calling `TreeSitterLanguagePackBridge.nativeFreeLanguage`, a symbol neither the Bridge
+    object nor the JNI shim declares. Both AAR jobs failed on the unresolved reference.
+  - `quickstart.mdx` still imported `wasm/download/download_single_language.md`, one of the ten
+    wasm download snippets dropped in c5da3347a because the wasm package never exported those
+    symbols. The docs build failed with `UNRESOLVED_IMPORT`; the tab now uses the wasm
+    `prefetch_languages` snippet.
+  - The `validate` job pinned alef to 0.62.8 while `alef.toml` moved to 0.62.10, so
+    `alef e2e generate && git diff --exit-code` graded the committed tree against a different
+    generator and reported 45 files as drift.
+  - `task swift:e2e:test` built only `tree-sitter-language-pack-swift`. `Package.swift` links
+    `libts_pack_core_ffi.a` by absolute path and silently falls back to `target/debug` when the
+    release archive is missing, so the Swift e2e link failed on a debug archive that was never
+    built. The four Swift task builds now include `-p ts-pack-core-ffi`, matching
+    `ci-swift.yaml`.
+
+- **The grammar tables record AL at ABI 15.** AL's committed `parser.c` is now over the 24 MB
+  regeneration exemption, so it ships at ABI 15 rather than the pack default of 14. The
+  languages page, the README partial and README claimed 14, and the bundled-query columns for
+  Fsharp Signature, Leo, Sflog, Soql and Sosl were stale.
+
+- **The typst scanner's `deserialize` bounds its reads, and `serialize` no longer truncates.**
+  `vec_u32_deserialize` never took the `length` tree-sitter passes to
+  `tree_sitter_typst_external_scanner_deserialize`. It read an 8-byte element count out of the
+  buffer and then `memcpy`'d `count * 4` bytes with no bound against the serialized length, so any
+  buffer that was shorter or differently framed than the one `serialize` wrote was read past its
+  end — the count itself came from the buffer and was used directly as a copy length. Given a
+  1-byte buffer the scanner restored a full 40-byte state, i.e. it read 39 bytes it was never
+  given. `deserialize` now takes the length, bounds the count *before* it is multiplied (which
+  also stops `count * 4` and `sizeof(uint32_t) * cap` from wrapping into an undersized allocation),
+  and fails closed to the base state rather than applying a half-restored one.
+
+  The previous patch bounded only the `serialize` side, and did it by truncating. That was itself
+  the mechanism that made a misframed buffer reachable from ordinary input: when `indentation`
+  consumed the budget, `containers` was silently written as nothing at all, the four trailing
+  scalars were appended in its place, and the reader then took those scalars plus four bytes of
+  whatever followed the buffer as `containers`' 8-byte length prefix. Truncation is undetectable
+  to the reader; absence is not. `serialize` is now all-or-nothing and returns 0 when the state
+  does not fit, which tree-sitter reads as "no state" and which `deserialize` already handles
+  exactly.
+
+  This is a distinct defect from the prefix-width mismatch described below, and it survived that
+  fix: the widths now agree, but nothing bounded the reads. It is the crash behind
+  `process("#let x = 1", {"language": "typst"})` (#161, GitHub #180), which took down the Ruby,
+  Python, PHP, Elixir, Java, Dart and Go E2E gates along with the C# test host and a Node vitest
+  worker.
+
+- **`vec_u32_pop` in the typst scanner reads the last element instead of the one past it.**
+  Upstream returns `self->vec[self->len--]`. The post-decrement indexes `vec[len]` — one past the
+  last element — and only then shortens the vector, so every pop returned four bytes of whatever
+  followed the elements and read them from outside the allocation whenever `len` had reached `cap`
+  (which `deserialize` guarantees, since it sizes `cap` to exactly `len`). It is now
+  `vec[--self->len]`, and the empty-vector guard is written as real control flow because the
+  `assert()` macro in that file expands to `while (false);` and enforces nothing.
+
+  Nothing in the scanner consumed the value — all four call sites discard it — and the length
+  bookkeeping was already correct, which is why the defect outlived the serialization fix it was
+  found next to. `patches/typst/vec-u32-pop-off-by-one.patch` carries it; the existing
+  `serialize-buffer-overflow.patch` keeps its own scope, and its first hunk no longer takes the
+  `vec_u32_pop` line as context so the two patches apply and reverse-apply in either order.
+
+- **`process` fixtures name the field they actually assert on.** Twenty-one assertions said
+  `contains` on the bare `structure` or `imports` collection and meant "some item has this *kind*"
+  (or, for imports, "this *source*"). Up to alef 0.60.0 that generated a debug-string substring
+  match over the whole collection, which happened to be true. Alef then narrowed a collection
+  `contains` to compare only each item's `name`, and since `StructureItem.name` is the identifier
+  (`main`) rather than the kind (`Function`), every one of those assertions began failing — 19 of
+  the Rust E2E suite's 37 `process` tests. The fixtures now spell the path out as
+  `structure[].kind` and `imports[].source`, which restores the intended check explicitly.
+  `process_test` goes from 18 passed / 19 failed to 37 passed / 0 failed.
+
+  Only the Rust suite is regenerated here; the other language E2E suites need the same
+  regeneration before their gates clear.
+
+- **Parser binaries are rebuilt for every release instead of being copied out of a stale cache.**
+  The v1.15.5 release run shipped a stale `linux-x86_64` parser set: every one of its 371 parser
+  shared libraries was byte-identical to v1.15.0's, nothing having been recompiled since
+  2026-08-13. (Measured per platform: `linux-aarch64`, `macos-arm64`, `macos-x86_64` and both
+  Windows targets were genuinely rebuilt — only `linux-x86_64` was stale, which is exactly the
+  platform GitHub #180 was reported on.) The Rust cache
+  restores `target/` with mtimes newer than the fresh checkout, so cargo judged the build script
+  up to date and skipped it, and the packaging step (`find target/release/build -path
+  '*/out/libs/*' -exec cp`) then shipped whatever `out/libs/` the cache happened to carry. The
+  build-script output directory is now dropped before the parser build in both `publish.yaml` and
+  `ci-e2e.yaml`, so `build.rs` reruns and no stale artifact survives to be packaged.
+
+  This is why the typst segfault (#161, GitHub #180) outlived its own fix. `process("#let x = 1",
+  {"language": "typst"})` crashed because the bounded-serialize patch added in v1.15.0 narrowed
+  the scanner's element-count prefix to `uint32_t` while `vec_u32_deserialize` still read it back
+  as `sizeof self->len` — 4 bytes written, 8 bytes read, so the garbage upper half became a huge
+  element count that memmoved off the end of tree-sitter's 1 KiB serialization buffer. The source
+  was corrected on 2026-08-14 in 61e331426 and has been present since v1.15.1, but the corrected
+  scanner was never compiled: the shipped `libtree_sitter_typst.so` still stores the prefix with a
+  4-byte `movl`. That crash took down the Ruby, Python, PHP, C FFI, Dart, Elixir and Go E2E gates.
+
+### Fixed
+
+- **`pnpm install` succeeds in the WASM e2e suite again, so the WASM package publishes.** The last
+  dependency upgrade moved `vitest` to ^4.1.10 in `e2e/wasm/package.json` without regenerating
+  `e2e/wasm/pnpm-lock.yaml`, and CI has `frozen-lockfile` on by default:
+  `specifiers in the lockfile don't match specifiers in package.json`. That failed the
+  `E2E gate — WASM` job, and `publish-wasm` requires it to succeed — so v1.15.4 would have shipped
+  every other ecosystem while silently leaving npm one version behind. The lockfile is regenerated.
+
+- **Nested `Cargo.lock` files track the workspace version.** Carried forward from v1.15.4: the
+  `Validate versions` gate failed on stale locks under `e2e/rust` and
+  `packages/ruby/ext/ts_pack_core_rb/native`, which skipped the crates.io publish job and cascaded
+  into every language build with `failed to select a version for the requirement`.
+
+Neither v1.15.3 nor v1.15.4 published artifacts to any registry — use this version.
+
+## [1.15.4] - 2026-08-21
+
+### Fixed
+
+- **The release actually publishes.** v1.15.3 was tagged and released but published nothing: the
+  `Validate versions` gate failed on stale `Cargo.lock` files under `e2e/rust` and
+  `packages/ruby/ext/ts_pack_core_rb/native`, which skipped the crates.io publish job. Every
+  language-package build downstream of it then failed with
+  `failed to select a version for the requirement ^1.15.3`, because `alef publish prepare` was
+  retrying against a registry version that had never been pushed. The lockfiles are refreshed and
+  the gate passes. v1.15.3 carries no artifacts on any registry — use this version instead.
+
+## [1.15.3] - 2026-08-21
+
+### Fixed
+
+- **The generated Node e2e suite is valid TypeScript again.** A fixture whose call returns void and
+  whose only assertion is `not_error` renders `await expect(...).resolves.not.toThrow()`, but the
+  `it(...)` callback it lives in was only marked `async` when the *call* was async. For a
+  synchronous call — `cleanCache`, `configure`, `init`, `prefetch` — that produced `await` inside a
+  plain arrow function, a hard syntax error. Because `alef all` formats every language in a single
+  phase, the formatter rejecting one file aborted formatting for *all* of them, so the whole tree
+  was left unformatted and unstamped. Fixed in alef 0.62.8.
+
+- **The Zig e2e suite no longer panics on a serde-omitted field.** `data_extraction_json_empty_object`
+  asserts `is_empty` on a `Vec<DataNode>` that `#[serde(skip_serializing_if)]` omits entirely when
+  empty, so the generated JSON accessor's `.object.get("data").?` hit a missing key and panicked
+  with "attempt to use null value". alef now tracks `skip_serializing_if` as a fact distinct from
+  `Option<T>`-optionality and guards the lookup with `orelse .null`.
+
+- **Generated e2e tests no longer skip themselves where a `not_null` assertion was declared.**
+  Fixtures whose only assertion was "returns a valid X" rendered as
+  `assumeTrue(false, "alef rendered no runnable expectation")` — a test that reported green while
+  checking nothing. They now emit a real `assertNotNull(result, "expected non-null result")`.
+  844 assertions across the JVM targets were affected. Regenerated on alef 0.62.8.
+
+- **Enum-valued fields are compared against their wire value instead of an enum's `toString()`.**
+  `result.data.kind` is a `DataNodeKind`, and every backend compared it directly to the string
+  `"KeyValue"`. Each target now goes through its own wire-text conversion — `toWire()` in Kotlin,
+  `JsonSerializer.Serialize(...).Trim('"')` in C#, `_alefE2eText` in Dart, `_alef_e2e_text` in
+  Python, `to_string` in Elixir, `format!("{:?}", ...)` in Rust — so the assertion tests the
+  serialised value rather than an accidental `Debug`/`toString` match.
+
+- **The C examples free the enum handle they allocate.** `ts_pack_data_node_kind` returns a
+  `TS_PACKAlefHandle`, not a `char *`; the generated C now takes the handle, asserts it is
+  non-zero, converts with `ts_pack_data_node_kind_to_string`, and calls
+  `ts_pack_data_node_kind_free`. The previous form assigned a handle to `char *`.
+
+- **The JNI bridge formats errors with `to_string()` rather than `format!("{e}")`**, dropping an
+  allocation per thrown exception across 25 call sites.
+
+- **The Java package's javadoc and compiler source sets no longer fight each other.** alef now
+  emits both the `maven-javadoc-plugin` `<sourceFileIncludes>` (restricting javadoc to publishable
+  API sources, so test-scoped imports cannot fail `attach-javadocs`) and the `maven-compiler-plugin`
+  `<excludes>`, plus a checkstyle `<excludes>**/.alef/**</excludes>`. `packages/java/pom.xml` is now
+  alef-owned and carries a provenance marker; the hand-applied javadoc fix it previously held is
+  reproduced by the generator. Checkstyle moves to 13.11.0 and surefire/failsafe to 2.22.2.
+
+### Removed
+
+- **`DownloadTest` is gone from the Android e2e suites.** `crates.kotlin_android.features` does not
+  enable `download`, so alef now emits an `ExcludedBindingsTest` of `@Disabled` cases naming the
+  gating feature instead of tests that could never link.
+
+### Changed
+
+- alef pinned to 0.62.8 in `alef.toml` and in the CI `alef-version` input.
+- All Rust dependencies taken to their latest versions (`cargo upgrade --incompatible`
+  followed by `cargo update`): 70 packages upgraded, one dropped, no downgrades.
+
+## [1.15.2] - 2026-08-19
+
+**Use this release instead of 1.15.1.** 1.15.1 was tagged but never published — its release run
+failed every e2e gate (Ruby, Elixir, Python, Go, Rust, C#, WASM, Java, Node) plus the WASM build,
+so no artifact from it reached any registry. crates.io still tops out at 1.15.0. Everything listed
+under 1.15.1 below ships here.
+
+### Fixed
+
+- **Generated bindings no longer assert a required field is optional.** The generator derived
+  field optionality from a hand-maintained config list rather than from the extracted IR, so a
+  crate that declared none — as this one does — had every optional wrapper resolved wrongly across
+  13 language backends. Go's `assert.True(result.Data)` against a `*DataNode` is the shape that
+  failed the release. Regenerated on alef 0.62.0, which derives optionality from the IR.
+
+- **Generated C examples no longer call a constructor the FFI never exports.** A `Vec<String>`
+  argument resolved its element type to the std type `String`, so the generator emitted
+  `ts_pack_string_from_json("[]")` and a matching `ts_pack_string_free(...)` — symbols nothing
+  declares, failing every affected snippet with "call to undeclared function". The C ABI takes the
+  argument as a plain `const char *` JSON string, so it is now passed directly:
+  `ts_pack_prefetch("[]")`. Fixed in alef 0.62.2.
+
+- **`StructureItem.kind` is no longer typed as optional.** The Rust core declares
+  `pub kind: StructureKind` with `#[default] Function`; bindings emitted the equivalent of
+  `kind: StructureKind | str | None = None`, making a required field nullable and defaulting it to
+  the wrong value. It now carries the real default.
+
+### Changed
+
+- CI runs fixture snippet validation again (`check-fixture-snippets`), pinned to the alef version
+  that generated this tree. It had been disabled on the premise that the shared workflow's `v1` tag
+  does not declare the input; `v1` does declare it. This is the gate that catches generated examples
+  which no longer compile against the API they document.
+
+## [1.15.1] - 2026-08-18
+
+### Added
+
+- `Parser` now implements `Debug`, reporting the configured language name and parse limits. It could
+  not be derived — the wrapped `tree_sitter::Parser` is a `NonNull` newtype with no `Debug` of its
+  own — so the pointer is elided. Debug-printing a `Parser`, or a `Result<Parser, Error>` returned by
+  `get_parser`, previously failed to compile with E0277.
+
+**Use this release instead of 1.15.0.** The 1.15.0 GitHub release is incomplete — it carries the
+parser bundles and the Rust CLI, but none of the Go, C FFI, Elixir, PHP, Swift or Zig archives — and
+most bindings were never published at all: crates.io and Packagist got 1.15.0, but PyPI, npm, the npm
+WASM package, RubyGems, both Maven Central artifacts, NuGet, Hex.pm, pub.dev and the Homebrew tap did
+not. 1.15.0 also shipped a crash in the typst grammar, described below.
+
+### Fixed
+
+- **The language bindings are generated again.** Two independent generator-configuration faults had
+  to be cleared, and because generation is all-or-nothing across backends, either one alone stopped
+  every binding from being produced. First, three keys in `alef.toml` were not in the generator's
+  schema; they had previously been discarded in silence, and a move to `deny_unknown_fields` turned
+  them into a hard parse error that failed the run before any backend was reached. Second, six
+  backends — C#, Java, Kotlin/Android, Go, Swift and Zig — now have to declare an ownership contract
+  for the types they hand to a host tree-sitter library, and none of them did.
+- **Typst crashed the process on any input, including `#let x = 1`.** Introduced in 1.15.0 and
+  affecting no earlier release. The external scanner's serialization patch wrote the vector length
+  prefix as a 4-byte `uint32_t` but read it back as an 8-byte `size_t`, so deserialization took four
+  bytes of adjacent buffer as the high half of the element count and `memmove`d that many elements
+  off the end of tree-sitter's fixed 1 KiB serialization buffer. The result was a `SIGBUS` at a
+  different address on each run. The prefix is now `size_t` on both sides. If you parse typst, 1.15.0
+  is unusable; there is no workaround short of upgrading.
+- **Brightscript had no syntax highlighting at all.** Upstream added the `m` grammar rule and its
+  `(m) @keyword` highlight in one commit without re-running `tree-sitter generate`, so the committed
+  parser had no `m` node and the entire highlights query was rejected — not merely one keyword. Our
+  pin sat on that merge. Upstream has since regenerated, so the pin moves forward one commit.
+- **The Go module could not link out of the box on four of its five platforms.** FFI libraries were
+  staged under Go's `GOARCH` spellings (`linux-amd64`, `linux-arm64`) while `binding.go`'s cgo
+  `LDFLAGS` and `cmd/setup` both look for alef's labels (`linux-x86_64`, `linux-aarch64`) verbatim.
+  Only `macos-arm64` happened to line up; every other platform required running `cmd/setup` first.
+- **The Java JAR threw `UnsatisfiedLinkError` on every ARM64 Linux and Windows host.** The loader
+  resolves natives under `linux-aarch64` / `windows-aarch64`, but the build matrix packaged them as
+  `linux-arm64` / `windows-arm64`, so the JAR contained no directory the loader would look in and it
+  fell through to `System.loadLibrary`. macOS ARM was unaffected because the loader special-cases it.
+
+- **The Swift package pointed at the previous release's binary artifact.** `Package.swift`'s
+  `binaryTarget` URL is rewritten to the current version on each release, but it was left on
+  `v1.15.0`, while the publish workflow injects the checksum of the bundle built for the release
+  actually being cut. SwiftPM verifies the downloaded bundle against that checksum, so the two
+  disagreeing would have failed resolution outright rather than silently fetching a stale binary.
+  The test app's Rust dependency had drifted the same way and was two releases behind.
+
+### Changed
+
+- **The `Language` handed to a host tree-sitter library is borrowed, and that is now stated and
+  enforced.** Every binding that exposes a grammar to a third-party tree-sitter runtime now declares
+  that the pointer is borrowed for the process lifetime, that the host must not free it, and that it
+  is ABI-compatible with the host's own language type. This is a declaration of what was always
+  true — the grammars are `'static` and were never owned by the caller — so no runtime behaviour
+  changes; the contract is simply checked at generation time now instead of being assumed.
+- **Publishing to crates.io is now ordered after the GitHub release is complete.** In 1.15.0 the
+  crate went out roughly seven hours before its release assets did, leaving a window where the
+  version resolved but the artifacts `build.rs` downloads returned 404 ([#177]). The draft-publish
+  step also gated on nothing, because the job opened with `if: always()`, which is how a release
+  missing most of its assets still went public. Asset uploads are now checked individually before
+  the release is published, and the crates.io publish depends on that.
+
+[#177]: https://github.com/xberg-io/tree-sitter-language-pack/issues/177
+
+## [1.15.0] - 2026-08-13
+
+This release ships the Rust crates only. The language bindings are held back pending generator
+fixes and will follow; they skip the crates once regenerated.
+
+### Changed
+
+- **`PackConfig.cache_dir` is a base directory, not the final library path.** The crate now
+  appends `tree-sitter-language-pack/v{version}/libs` to it, exactly as it does to the platform
+  default, so `cache_dir = "/tmp/parsers"` resolves to
+  `/tmp/parsers/tree-sitter-language-pack/v{version}/libs/`. Earlier releases used the configured
+  path verbatim, which put the manifest, bundles and lock file in that directory's *parent* and let
+  a cache built by one crate version be reused by another. If you set `cache_dir`, your parsers
+  will be re-downloaded once into the new location.
+- **Query results change for roughly fifteen languages**, because they were being served another
+  grammar's queries. `_score_query_candidate` had an unreachable preference branch, so for grammars
+  vendored from a monorepo the winner was decided by filesystem traversal order: `cfml` took all
+  five of its query files from sibling grammars, `psv` and `tsv` took CSV's, and `dtd` took XML's.
+  `leo` took its `locals` from **m68k** and its `indents` from **ocaml**. Affected: apex, bsl,
+  cedarschema, cfml, dtd, fsharp_signature, leo, markdown, ocaml_interface, postgres, psv, sflog,
+  soql, sosl, tsv, xml, ziggy_schema. If you hold golden files for any of these, regenerate rather
+  than trust them — several previously returned plausible-but-wrong captures rather than an error.
+- `sflog`, `soql` and `sosl` now ship **fewer** query files. Upstream never wrote the missing kinds
+  for them; what they had belonged to a sibling grammar.
+
+  Known and not yet fixed in this release: `templ` still receives Go's `highlights` and `tags`,
+  which reach it through tree-sitter-templ's own npm dependency on tree-sitter-go. They compile,
+  because templ embeds Go, so no gate catches them. A fix is written but is being held until its
+  effect on every grammar with npm dependencies has been measured.
+- All 46 out-of-date grammars refreshed to upstream HEAD. Two carry parse-tree *shape* changes for
+  previously-valid source rather than merely new syntax: `al` (3.2.1 → 4.0.1: dangling-else binding,
+  operator precedence, statement-terminator restructuring) and `scala` (operator precedence and
+  associativity per SLS 6.12.3). Node types are unchanged in both, so queries still compile.
+
+### Added
+
+- `PackConfig::try_discover()`, which distinguishes "no config file" (`Ok(None)`) from "config file
+  found but unreadable or malformed" (`Err`, naming the path). `discover()` keeps its infallible
+  signature and now warns instead of silently returning `None`.
+- Windows cache-directory hardening: the cache is verified to sit under `%LOCALAPPDATA%`, which
+  Windows already restricts to the owning user, and warns when it does not. Advisory only — it
+  never refuses.
+- Always-on `tracing` spans and events across the parse and intelligence pipelines.
+- Documentation snippets are generated from the complete E2E fixture corpus and checked for
+  fixture-by-language coverage parity in local tasks and CI.
+
+### Fixed
+
+- `get_query` returned an error for **dart** and **php** `tags`: both hand-written overlays named
+  node types their grammars do not have, and nothing ever compiled them. `ocaml_interface`
+  highlights likewise, where upstream ships one shared query set written for the implementation
+  grammar.
+- Intelligence extractors no longer drop a module docstring that follows a shebang or licence
+  header, fabricate docstrings, or miscount comment rows. `SymbolInfo.doc` is populated.
+- Shebang detection works on files that begin with a UTF-8 BOM.
+- A cache-registration race could leave the process wedged; a panic inside a critical section no
+  longer poisons a lock permanently.
+- `DownloadManager` resolves language aliases, and configuration errors are reported rather than
+  discarded.
+- Only grammars whose external scanner actually keeps global state are serialised during parsing —
+  measured at 1 of 199 — instead of a single global parse lock.
+- Dynamic-loading builds are relocatable.
+- Dart: the native loader downloads and caches the library again on a cold cache. It only read
+  the versioned cache and then threw a `StateError`, even though `nativeDownloadAndCacheLibrary()`
+  was defined and exported for exactly that case. The loader also now searches for the
+  `_dart`-suffixed cdylib that is actually built, opens every candidate by absolute path (a
+  hardened runtime rejects a relative `dlopen`), and names the real environment variable in its
+  error message instead of printing the identifier `$nativeLibDirEnv` literally. Fixed upstream in
+  alef 0.55.6.
+
+  Behavior change: an unresolvable native now throws a descriptive `StateError` naming the asset
+  URL and the download command, where it previously returned `null` and let flutter_rust_bridge
+  attempt its own relative-path `dlopen`.
+
+## [1.14.3] - 2026-08-05
+
+### Fixed
+
+- **Windows parser binaries build.** The `UTF8PROC_STATIC` fix in 1.14.2 covered the two
+  static-link paths but not the third one, which builds each grammar's shared library from a raw
+  compiler invocation and compiles `utf8proc.c` straight into it. MSVC therefore still rejected all
+  183 scanner grammars with `error C2491`, and the 1.14.2 release produced no `windows-x86_64` or
+  `windows-aarch64` parser binaries ([#174]).
+
+### Added
+
+- CI builds the parser binaries on `windows-x86_64` and `windows-aarch64` on every push, mirroring
+  the publish job. Windows previously ran on no CI runner, so the dynamic-link build was first
+  attempted at release time; the build log is also written to a file and uploaded, because the
+  failing step exceeded GitHub's per-step log archive cap and left no recoverable diagnostic.
+- The validate job installs the Go, Ruby, Dart and Elixir toolchains, so `poly`'s whole-project lint
+  phase — golangci-lint, rubocop, steep, dart-analyze and credo — runs in CI rather than only in the
+  git hooks.
+
+## [1.14.2] - 2026-08-05
+
+### Fixed
+
+- **Windows artifacts build again.** `utf8proc.c` is compiled into a static archive, but
+  `UTF8PROC_STATIC` was never defined, so on MSVC `utf8proc.h` declared every `utf8proc_*` symbol
+  `__declspec(dllimport)` and the same translation unit then defined it — `error C2491`. Every
+  Windows job in the 1.14.1 release (parser binaries, C FFI, CLI, C# native) failed, which is why
+  no `windows-x86_64` entry ever reached the pre-built parser manifest ([#174]).
+- **C++ grammar scanners build under musl.** The deterministic wide-ctype shim redirects the libc
+  classifiers through function-like macros. Preprocessing is token-based, so a scanner calling
+  `std::iswspace(c)` expanded to a `std::ts_pack_iswspace` that does not exist, and heavy libstdc++
+  headers re-declaring those classifiers after the macros were in scope failed to compile on musl.
+  The redirected names are now visible in `namespace std`, and `norg` — whose scanner pulls in
+  `<cwctype>`, `<locale>` and `<regex>` — is excluded from the shim entirely, so it falls back to
+  libc consistently. This unblocks the all-grammar Docker image and the Docker publish.
+- **The WASM build no longer emits an unresolved `env` import.** Most tree-sitter scanners include
+  `<wchar.h>` themselves, and wasi-libc's copy unconditionally redefines `iswdigit` and friends as
+  trampoline macros, silently clobbering the shim's redirects and leaving a reference to a symbol
+  that does not exist on `wasm32`. It surfaced as `Cannot find module 'env'` from the wasm-bindgen
+  glue. The shim now burns that include guard up front on `__wasi__`.
+- **PHP e2e autoloads the relocated sources.** The generated `composer.json` still pointed at the
+  emptied `packages/php/src`, so every PHP test failed with a missing-class error. It now resolves
+  to `crates/ts-pack-core-php`.
+- Restored formatting of a generated Go source file and `docs-site/pnpm-workspace.yaml`, and scoped
+  `poly lint` to skip whole-project linters whose toolchains CI does not install.
+
+[#174]: https://github.com/xberg-io/tree-sitter-language-pack/issues/174
+
+## [1.14.1] - 2026-08-04
 
 ### Fixed
 
@@ -24,7 +939,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wide-ctype shim instead of libc `<wctype.h>`, making parse trees (and downstream formatting)
   identical across macOS and glibc. Pinned `tree-sitter-cli` to `0.26.11` in CI.
 
-## 1.14.0 - 2026-08-01
+## [1.14.0] - 2026-08-01
 
 ### Added
 
@@ -56,7 +971,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (opted in crate-wide), while the MCP command's diagnostics continue through `tracing`.
 - Regenerate all language bindings on alef 0.49.0.
 
-## 1.13.5 - 2026-07-27
+## [1.13.5] - 2026-07-27
 
 ### Changed
 
@@ -71,7 +986,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ci**: render `runtime.json` from its template before packing the NuGet package so C# runtime
   metadata is published correctly.
 
-## 1.13.4 - 2026-07-26
+## [1.13.4] - 2026-07-26
 
 ### Changed
 
@@ -82,7 +997,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Remove unused Java PMD ruleset and stale linter configuration.
 
-## 1.13.3 - 2026-07-21
+## [1.13.3] - 2026-07-21
 
 ### Fixed
 
@@ -100,7 +1015,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pnpm-lock.yaml`, `uv.lock`, Ruby `Gemfile.lock`).
 - Regenerated all bindings with alef 0.42.0.
 
-## 1.13.2 - 2026-07-20
+## [1.13.2] - 2026-07-20
 
 ### Fixed
 
@@ -120,7 +1035,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ci**: the Docker CI and publish workflows tolerate a full GitHub Actions cache — a cache-export
   failure no longer fails the build.
 
-## 1.13.1 - 2026-07-19
+## [1.13.1] - 2026-07-19
 
 ### Fixed
 
@@ -137,7 +1052,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **build**: regenerate all bindings against alef 0.38.0. Includes an improved Dart native-library
   loader (env-var override, versioned user cache, explicit errors).
 
-## 1.13.0 - 2026-07-19
+## [1.13.0] - 2026-07-19
 
 ### Added
 
@@ -172,7 +1087,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **docs**: migrate the documentation site to Astro Starlight on the shared `@xberg-io/docs-theme`,
   and rewrite the landing page and README to a value-first voice.
 
-## 1.12.5 - 2026-07-07
+## [1.12.5] - 2026-07-07
 
 ### Fixed
 
@@ -184,7 +1099,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rebuilt the crate on every invocation. Fixes
   [#159](https://github.com/xberg-io/tree-sitter-language-pack/pull/159).
 
-## 1.12.3 - 2026-07-02
+## [1.12.3] - 2026-07-02
 
 ### Fixed
 
@@ -215,7 +1130,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **build**: `build.rs` now reports `failed_languages.txt` write errors separately (via `eprintln`)
   and always surfaces the underlying grammar compilation error even when the write fails.
 
-## 1.12.0 - 2026-06-29
+## [1.12.0] - 2026-06-29
 
 ### Added
 
@@ -235,7 +1150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   already-loaded dynamic grammars; the global load mutex guards only the not-yet-loaded dynamic
   library path. Removes per-call mutex contention on the hot parse path.
 
-## 1.11.1 - 2026-06-29
+## [1.11.1] - 2026-06-29
 
 ### Fixed
 
@@ -246,7 +1161,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   package (alef 0.30.1).
 - **docs**: correct stale "300+" language counts to "306".
 
-## 1.11.0 - 2026-06-27
+## [1.11.0] - 2026-06-27
 
 Stable release promoting 1.11.0-rc.2 (fully published). Version synced across all manifests.
 
@@ -259,9 +1174,9 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   (from 16) and 2 generate concurrency (from 3) to stay within resource budgets. Fixes CI, CLI,
   Docker, E2E, Swift, Rust, and Validate workflow failures.
 
-## 1.11.0-rc.2 - 2026-06-27
+## [1.11.0-rc.2] - 2026-06-27
 
-## 1.10.9 - 2026-06-24
+## [1.10.9] - 2026-06-24
 
 ### Fixed
 
@@ -277,7 +1192,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   variants derive from the native base `Error` and the package re-exports the native classes
   (with matching type stubs), so `except DownloadError:`/`except Error:` work. Fixes #147.
 
-## 1.10.8 - 2026-06-24
+## [1.10.8] - 2026-06-24
 
 ### Fixed
 
@@ -301,7 +1216,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   an empty `TreeSitterLanguagePack` target. The checksum commit is now also pushed to
   `refs/heads/release/swift/<version>`. (`.github/workflows/publish.yaml`)
 
-## 1.10.4 - 2026-06-22
+## [1.10.4] - 2026-06-22
 
 ### Added
 
@@ -338,7 +1253,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   but single-extension lookup only saw `src`. A compound-extension table now resolves `*.app.src` to
   the Erlang grammar.
 
-## 1.10.3 - 2026-06-22
+## [1.10.3] - 2026-06-22
 
 ### Changed
 
@@ -350,7 +1265,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 - **Updated dependencies within their current major versions** (Rust crates, PHP dev tooling, pnpm
   toolchain pin).
 
-## 1.10.2 - 2026-06-22
+## [1.10.2] - 2026-06-22
 
 ### Fixed
 
@@ -361,7 +1276,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   code spans (`` `Type` ``) during emission, preserving genuine URL/anchor Markdown links. Picked up
   from the alef 0.25.60 regen.
 
-## 1.10.1 - 2026-06-20
+## [1.10.1] - 2026-06-20
 
 ### Fixed
 
@@ -395,7 +1310,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   it casts `value.into_raw()` to), and the zig `build.zig.zon` carries the resolved `zig-tree-sitter`
   content hash.
 
-## 1.9.1 - 2026-06-18
+## [1.9.1] - 2026-06-18
 
 ### Fixed
 
@@ -404,7 +1319,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   exclusion set, dropping `get_language` (the only free function returning the opaque
   `Language` type) from the generated public API in v1.9.0. Regenerated against alef 0.25.43.
 
-## 1.9.0 - 2026-06-18
+## [1.9.0] - 2026-06-18
 
 ### Changed
 
@@ -417,7 +1332,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 - **Java: dropped throwing `UnsupportedOperationException` stubs for `Self`-returning DTO/enum methods.** There is no JNI/FFM symbol for DTO methods yet, so the throwing stubs compiled but misled callers and broke any path that reached them. The Java backend now skips these methods until marshaling lands.
 - **Java: restored the `true` default for boxed `@Nullable Boolean` `#[serde(default)]` record fields.** A non-optional `#[serde(default)] bool = true` field is boxed to `@Nullable Boolean`, so JSON that omitted it deserialised to `null` and the accessor returned `null` instead of `true`.
 
-## 1.9.0-rc.55 - 2026-06-17
+## [1.9.0-rc.55] - 2026-06-17
 
 ### Changed
 
@@ -428,7 +1343,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 - **Elixir Hex install OTP 27.2 TLS `key_usage_mismatch` against `builds.hex.pm`.** Switched test-elixir jobs in `ci.yaml` and `ci-e2e.yaml` to `xberg-io/actions/setup-elixir@v1` wrapper which routes through `cdn.hex.pm` to bypass OTP 27.2 TLS cert-chain rejection against `builds.hex.pm`.
 - **`ci.yaml` test-* jobs 404 race on `parsers.json`.** Mirrored `ci-e2e.yaml`'s `build-e2e-bundles` job into `ci.yaml` and added `TREE_SITTER_LANGUAGE_PACK_MANIFEST_URL` manifest wiring to all test-* jobs (test-python, test-node, test-wasm, test-go, test-java, test-csharp, test-ruby, test-php, test-elixir, test-c-ffi). Pre-publish, the workspace version has no GitHub Release yet, so the runtime's network fetch of `parsers.json` would 404; bundling parsers locally and exporting the manifest URL avoids the race.
 
-## 1.9.0-rc.54 - 2026-06-17
+## [1.9.0-rc.54] - 2026-06-17
 
 ### Changed
 
@@ -441,7 +1356,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 - **Node vitest first-load timeouts.** `smoke_devicetree` and `smoke_ocamllex` exceeded the default 30 s test timeout on first load. Raised `testTimeout` to 60 s, `hookTimeout` to 120 s.
 - **C FFI E2E 404 race in `ci-e2e.yaml`.** `e2e/c/download_ffi.sh` pinned the FFI tarball URL to the current workspace version; on main pushes before the matching tag was created, the curl 404'd because the GitHub Release for that version didn't exist yet. Script now honours `ALEF_FFI_LOCAL_DIR` env override to skip the network fetch and consume pre-staged headers/libs. `ci-e2e.yaml/test-c-ffi` is now `needs: build-ffi` and stages the locally-built artifact via the override.
 
-## 1.9.0-rc.53 - 2026-06-16
+## [1.9.0-rc.53] - 2026-06-16
 
 ### Changed
 
@@ -455,7 +1370,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 - **CI `Check version sync` red on `main`.** The elixir NIF `Cargo.toml` emitted `[lints.rust]` before `[dependencies]`; consumers' `prek run --all-files` runs cargo-sort which reorders the block to the file end, producing a perpetual diff. The CI version-sync step does NOT run cargo-sort, so it reported "Versions are out of sync" on every release tag. Picked up via alef 0.25.19.
 - **Dart publish pipeline native staging (rc.52 regression).** The `assemble-dart-package` job in `.github/workflows/publish.yaml` used `download-artifact@v8` with `merge-multiple: true`, flattening every `dart-native-<rid>` artifact's contents directly under `dart-natives/`. The subsequent RID inference (`basename "$(dirname "$f")"`) then resolved to the literal string `dart-natives` for every file, causing all four native libraries to be skipped with `Warning: unrecognized rid 'dart-natives'`. The published rc.52 pub.dev tarball contained no `lib/src/native/<rid>/` directory; the FRB loader fell through to the default relative-path dlopen which macOS hardened-runtime rejected with "relative path not allowed in hardened program". Fix: drop `merge-multiple: true` so each artifact extracts to its own `dart-natives/dart-native-<rid>/` directory, and derive the RID by stripping the `dart-native-` prefix from the artifact directory name.
 
-## 1.9.0-rc.52 - 2026-06-16
+## [1.9.0-rc.52] - 2026-06-16
 
 ### Changed
 
@@ -477,7 +1392,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 - **Python: standalone `tree-sitter` package dependency.** No longer required by `tree-sitter-language-pack`. Install it separately if you need the upstream API.
 - **Node: `e2e/node/tests/capsule_passthrough.test.ts` and `tree-sitter` devDependency.** Obsolete now that node `getLanguage` returns the native type.
 
-## 1.9.0-rc.51 - 2026-06-15
+## [1.9.0-rc.51] - 2026-06-15
 
 ### Changed
 
@@ -485,7 +1400,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   - **0.25.15 — revert(swift): drop cfg-union postprocessing passes (c89926d5e, 4313b6e1d).** The wrapper-type and function cfg-union propagation passes introduced in 0.25.12/0.25.13 caused downstream binding regressions; reverted in favour of the 0.25.14 default-features approach in the swift binding Cargo.toml.
 - **Bumped tslp `1.9.0-rc.50` → `1.9.0-rc.51`** propagated via `task alef:sync`.
 
-## 1.9.0-rc.50 - 2026-06-15
+## [1.9.0-rc.50] - 2026-06-15
 
 ### Changed
 
@@ -498,7 +1413,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   - **0.25.14 — Swift binding Cargo.toml lists every forwarded cfg-feature in `default = [...]`.** Prevents `error[E0425]: cannot find type 'DownloadManager' in this scope` on regen consumers when the wrapper struct is cfg-gated but free helper functions referencing it are not — the binding's default profile now matches what its core dep already pulls in via `features = [..., "download"]`.
 - **Bumped tslp `1.9.0-rc.49` → `1.9.0-rc.50`** propagated via `task alef:sync`.
 
-## 1.9.0-rc.49 - 2026-06-15
+## [1.9.0-rc.49] - 2026-06-15
 
 ### Changed
 
@@ -522,7 +1437,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   - **0.25.11 — Rustler codegen clippy violations** (type complexity, collapsible if, struct update, useless conversions) + **Rustler trait-bridge parameter cloning skips no-op clones on reference types** + **JNI clippy lints + Swift cargo.rs api param** + **pyo3 async lifetime/result-handling cleanup**.
 - **Bumped tslp `1.9.0-rc.48` → `1.9.0-rc.49`** propagated via `task alef:sync`.
 
-## 1.9.0-rc.48 - 2026-06-15
+## [1.9.0-rc.48] - 2026-06-15
 
 ### Changed
 
@@ -533,7 +1448,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   - **0.25.9 — Dart check-cfg allow-list + mirror dead-code cleanup + publish current_dir.** Resolves the v0.25.8 build regression where the 0.25.8 cfg-strip patch orphaned the `emit_variant_cfg_open`/`emit_variant_cfg_close` helpers, tripping `-D warnings` on all 4 alef publish jobs (3× Build CLI + crates.io). Also widens the dart check-cfg allow-list and tightens `publish` current-dir handling.
   - **alef-side accumulated fixes (released as 0.25.9 alongside the above).** Direct-deps replacement for the no-op `[patch.crates-io]` block alef 0.25.8 emitted in the Elixir NIF `Cargo.toml` (cargo refused with "patch points to the same source"). Direct deps with `=` constraints + matching `package.metadata.cargo-machete.ignored` entries pin `alloc-no-stdlib`/`alloc-stdlib`/`brotli-decompressor` transitively. YARD doc-coverage hook fixed via a documented `GEMSPEC` constant in the generated `packages/ruby/Rakefile` and a matching docstring in the in-tree stale `packages/ruby/ext/ts_pack_core_rb/src/Rakefile` (the latter file is hand-maintained and not regenerated; cleanup deferred).
 
-## 1.9.0-rc.46 - 2026-06-14
+## [1.9.0-rc.46] - 2026-06-14
 
 ### Changed
 
@@ -541,7 +1456,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   - `publish prepare` now strips workspace-member `[[package]]` entries from the seeded `Cargo.lock` before per-member `cargo update -p`. Without this strip the path-source seed entry collides with the rewritten registry-source dep and `cargo metadata --locked` validation fails.
   - `publish prepare` disambiguates the per-member `cargo update -p` spec by using the full `registry+https://github.com/rust-lang/crates.io-index#NAME@VERSION` package id when the member version is known. Both fixes are required to unblock Ruby gem + Elixir NIF + PHP extension matrix builds on rc.46 (rc.45 failed Ruby macos-x86_64 / linux-aarch64 + Elixir linux-aarch64 / macos-x86_64 on this exact path).
 
-## 1.9.0-rc.45 - 2026-06-14
+## [1.9.0-rc.45] - 2026-06-14
 
 ### Changed
 
@@ -549,7 +1464,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 - **Bumped `alef` pin 0.25.0 → 0.25.1.** Picks up the `assertions.rs:227` C-e2e codegen hardening (panic-on-missing-`fields_c_types` rather than the silent PascalCase fallback that produced `TS_PACKData` instead of `TS_PACKDataNode` in rc.43).
 - **All cargo invocations across `.github/workflows/` and `.task/` now pass `--locked`.** Sweep applied in a separate commit (`130627437`) ahead of this regen to keep the manifest-normalisation fix isolated; this rc carries it forward. Same motivation as the actions-side v1.8.68 sweep: a broken upstream release (recent `brotli-decompressor 5.0.1`) can no longer silently override the committed lockfile during CI.
 
-## 1.9.0-rc.44 - 2026-06-14
+## [1.9.0-rc.44] - 2026-06-14
 
 ### Fixed
 
@@ -580,7 +1495,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   `crates/ts-pack-core/src/intel/data_extraction.rs`.** New 1322-line module
   added for hierarchical data extraction; remediation backlog entry.
 
-## 1.9.0-rc.43 - 2026-06-14
+## [1.9.0-rc.43] - 2026-06-14
 
 ### Fixed
 
@@ -594,25 +1509,25 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   now `pip install --user zstandard` then opens each archive via
   `ZstdDecompressor().stream_reader()` and `tarfile.open(fileobj=..., mode='r|')`.
 
-## 1.9.0-rc.42 - 2026-06-14
+## [1.9.0-rc.42] - 2026-06-14
 
 ### Changed
 
 - **Regenerated against released alef 0.25.0.** Picks up the new `Extension` trait surface (per-extension TOML config + `transform_emitted_files` hook), Swift target-specific core dependency overrides, the zig `_first_error` → contextual error fix, and the Dart hardened-runtime framework load fix. Restores `crates/ts-pack-core-ffi/{src/lib.rs,build.rs,cbindgen.toml}` which a transient pre-release regen against an in-progress alef had erroneously dropped.
 
-## 1.9.0-rc.41 - 2026-06-13
+## [1.9.0-rc.41] - 2026-06-13
 
 ### Fixed
 
 - **JNI codegen: `&[&str]` core params no longer fail E0308.** The JNI function/method shims emitted `&names` for `Vec<String>` slots, which coerces to `&[String]` but not `&[&str]`. Core fns declared as `&[&str]` (e.g. `download(&[&str])`) failed to compile with `expected reference &[&str], found reference &Vec<String>`. Alef now consults the IR `vec_inner_is_ref` flag to materialise a `Vec<&str>` and borrow it (`&names.iter().map(|s| s.as_str()).collect::<Vec<_>>()`) when the core function expects `&[&str]`, matching the existing Dart codegen behaviour. Folded into the alef 0.24.17 release.
 
-## 1.9.0-rc.40 - 2026-06-13
+## [1.9.0-rc.40] - 2026-06-13
 
 ### Fixed
 
 - **Removed stray `test_apps/kotlin_android/file:/tmp/` directory that broke every Windows publish job.** A prior regen wrote a runtime download cache (`.download.lock`, `manifest.json`) into a literal directory named `file:` because a `cache_dir` value of the form `file:/tmp/…` was interpreted as a relative path rather than a URI. The `:` is illegal in Windows paths, so every `actions/checkout` step on Windows failed with `invalid path 'test_apps/kotlin_android/file:/tmp/.download.lock'` — collapsing 21 Windows builds in the rc.39 publish run and leaving npm / PyPI / NuGet / Maven stuck at rc.38. The bad files are removed and `.gitignore` now blocks the pattern (`test_apps/*/file:/`) alongside the existing `test_documents/file:/` guard.
 
-## 1.9.0-rc.39 - 2026-06-12
+## [1.9.0-rc.39] - 2026-06-12
 
 ### Added
 
@@ -624,7 +1539,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 
 - **Alef pin bumped 0.24.10 → 0.24.14.** Pulls in the JNI run-default split (host-JVM gradle runner replaces the `Ffi | Jni` no-op), JNI return marshalling for raw `String` / `Option<String>` returns (no more JSON-encoded `"\"python\""` surfacing in Kotlin), Kotlin test emitter `loadLibrary` respecting `[crates.ffi] prefix` (resolves `ts_pack_jni` instead of the literal crate name), and the Kotlin assertion emitter switching list-`contains` checks to a case-insensitive `toString().lowercase().contains(...)` shape that mirrors the Java emitter.
 
-## 1.9.0-rc.32 - 2026-06-11
+## [1.9.0-rc.32] - 2026-06-11
 
 ### Fixed
 
@@ -639,7 +1554,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 - **Alef pin bumped 0.23.68 → 0.24.2.** Pulls in the FFI/NAPI rustdoc-warning fixes and Zig URL alignment above, plus a Kotlin Android host JNI artifact for JVM test_apps (`buildHostJni` / `copyHostJni` Gradle tasks guarded by `alef.skipHostJni`), Go scaffold `module_major` parameterization that lets non-kreuzberg consumers configure their `packages/go/v{N}` layout, and a broad sweep of trait-bridge adapter fixes across Kotlin Android, C#, Java, Node, R, Swift, Dart, Elixir, and Go.
 - **`crates/ts-pack-core/build.rs` added to the `rust-max-lines` exclude list (1081 LOC > 1000-line ceiling).** Joins the existing remediation backlog of large files awaiting split.
 
-## 1.9.0-rc.31 - 2026-06-09
+## [1.9.0-rc.31] - 2026-06-09
 
 ### Fixed
 
@@ -647,7 +1562,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
   - **kotlin-android**: Foojay toolchain resolver plugin bumped v0.7.0 → v0.10.0 in both `settings.gradle.kts` emitters. v0.7.0 referenced `JvmVendorSpec.IBM_SEMERU`, which Gradle 9.0+ removed (renamed to `IBM`); Gradle 9.5.1 hosts failed at project-evaluation with `Class org.gradle.jvm.toolchain.JvmVendorSpec does not have member field 'IBM_SEMERU'`. v0.10.0 is Gradle 9.x-safe.
   - **zig**: published tarballs now use simple-arch platform labels (`linux-x86_64`, `linux-aarch64`, `macos-arm64`, `macos-x86_64`, `windows-x86_64`) matching `build.zig.zon` URL templates. Previously `RustTarget::platform_for(Language::Zig)` returned the rust triple, so `alef publish package --lang zig --target …` emitted `…-aarch64-apple-darwin.tar.gz` but the e2e codegen's URL templates and per-platform `[crates.e2e.registry.packages.zig.platform_hashes]` user config used the simple-arch convention. Consumers' `zig fetch` then 404'd.
 
-## 1.9.0-rc.30 - 2026-06-09
+## [1.9.0-rc.30] - 2026-06-09
 
 ### Fixed
 
@@ -655,7 +1570,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 - **`upload-release-assets@v1` receives the publisher-app token as an action input on all 4 cross-repo-write call sites.** The shared action sets `GH_TOKEN` inside its own composite step from `inputs.token` (default `github.token`), so a step-level `env: GH_TOKEN: …` on the calling job had no effect — uploads ran with the read-only default `GITHUB_TOKEN` and hit `HTTP 403: Resource not accessible by integration`. Now passes `token: ${{ steps.app-token.outputs.token }}` on the Go FFI, Elixir NIF, Swift bundle, and Zig upload sites. The PHP PIE upload site (line 2473) keeps the default token because its job declares `permissions: contents: write`. Fixes rc.29 publish run 27192809836 Upload Go FFI 403.
 - **Pulls in `xberg-io/actions` v1.8.49 retry-on-SSL upload fix.** `publish-github-release/scripts/upload_artifacts.py` now retries 5× with exponential backoff on `URLError` / `ssl.SSLError` / `ConnectionError` / `TimeoutError` / HTTP 5xx. rc.29 parser-sources bundle upload hit a transient `ssl.SSLEOFError` mid-upload on a 30 MB asset and cascaded to ~15 dependent failures (skipping `publish-crates`, which broke every PHP/Ruby/Elixir/Python-sdist `cargo generate-lockfile` against the unpublished workspace member); the retry absorbs the SSL race.
 
-## 1.9.0-rc.29 - 2026-06-09
+## [1.9.0-rc.29] - 2026-06-09
 
 ### Changed
 
@@ -667,7 +1582,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 
 - **`Stage Go FFI libraries` step in `.github/workflows/publish.yaml` now resolves the artifact path correctly.** The step `cd`s into `packages/go/` before walking the downloaded artifact tree, so the `find` invocation needs `../../tmp/go-ffi-all` (two levels up to the repo root). Commit `1de6c8dca` introduced `../../../tmp/go-ffi-all` (three levels up), pointing one directory above the workspace root → `find: '…/tmp/go-ffi-all': No such file or directory` → exit 1 → `packages/go/v1.9.0-rc.28` subtree tag never pushed. Manually staged + tagged rc.28; the next publish run picks up the fix.
 
-## 1.9.0-rc.28 - 2026-06-08
+## [1.9.0-rc.28] - 2026-06-08
 
 ### Fixed
 
@@ -681,7 +1596,7 @@ Stable release promoting 1.11.0-rc.2 (fully published). Version synced across al
 
 - **Alef pin bumped 0.23.34 → 0.23.48.** Pulls in the Zig null-check primitive-return fix (0.23.47), PHP module entry explicit-name fix (0.23.47), JSDoc `*/` sanitization helper (0.23.47), kotlin-android foojay-resolver plugin emission (0.23.47), Zig publish package name using Zig platform mapping (0.23.48), Zig null-guard returning canonical `error.Serialization` (0.23.47), FFI Finalize owner-pointer preservation (0.23.46), and the c download_ffi.sh asset name + zig cache clear + php pie always-install fixes (0.23.43–45).
 
-## 1.9.0-rc.27 - 2026-06-08
+## [1.9.0-rc.27] - 2026-06-08
 
 ### Fixed
 

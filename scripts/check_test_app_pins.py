@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Assert every registry-mode test app is pinned to the release currently being built.
 
 A registry-mode test app exists to prove that the *just-published* artifacts install and work.
@@ -79,7 +78,7 @@ PINS: tuple[Pin, ...] = (
         "test_apps/csharp/TreeSitterLanguagePack.E2eTests.csproj",
         r'Include="XbergIo\.TreeSitterLanguagePack"\s+Version="([^"]*)"',
     ),
-    Pin("go", "test_apps/go/go.mod", r"xberg-io/tree-sitter-language-pack/packages/go v([^\s]+)"),
+    Pin("go", "test_apps/go/go.mod", r"xberg-io/tree-sitter-language-pack/packages/go/v2 v([^\s]+)"),
     Pin("rust", "test_apps/rust/Cargo.toml", r'package = "tree-sitter-language-pack", version = "([^"]*)"'),
     Pin("ruby", "test_apps/ruby/Gemfile", r"gem 'tree_sitter_language_pack', '([^']*)'"),
     Pin("python", "test_apps/python/pyproject.toml", r'tree-sitter-language-pack==([^"]+)"'),
@@ -116,6 +115,24 @@ def read_release_version() -> str:
 class Finding:
     label: str
     detail: str
+
+
+def check_go_module(*, fix: bool) -> tuple[list[Finding], bool]:
+    """Keep the unmarked registry consumer on the configured Go major-version module."""
+    configuration = tomllib.loads((ROOT / "alef.toml").read_text(encoding="utf-8"))
+    expected = configuration["crates"][0]["go"]["module"]
+    path = ROOT / "test_apps/go/go.mod"
+    text = path.read_text(encoding="utf-8")
+    pattern = r"github\.com/xberg-io/tree-sitter-language-pack/packages/go(?:/v\d+)?(?=\s+v\d)"
+    matches = list(re.finditer(pattern, text))
+    if len(matches) != 1:
+        return [Finding("test_apps/go/go.mod", "expected exactly one language-pack module requirement")], False
+    if matches[0].group(0) == expected:
+        return [], False
+    if not fix:
+        return [Finding("test_apps/go/go.mod", f"module path must be {expected}")], False
+    path.write_text(re.sub(pattern, lambda _: expected, text), encoding="utf-8")
+    return [], True
 
 
 def check_pin(pin: Pin, release: str, *, fix: bool) -> tuple[list[Finding], bool]:
@@ -210,6 +227,11 @@ def main() -> int:
 
     if release != declared:
         findings.append(Finding("Cargo.toml [workspace.package].version", f"{declared}, expected {release}"))
+
+    module_findings, module_changed = check_go_module(fix=args.fix)
+    findings.extend(module_findings)
+    if module_changed:
+        fixed.append("test_apps/go/go.mod")
 
     for pin in PINS:
         pin_findings, changed = check_pin(pin, release, fix=args.fix)
