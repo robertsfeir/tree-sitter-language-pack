@@ -69,10 +69,23 @@ impl Wanted {
 /// [`super::walk::MAX_TREE_DEPTH`] the results are truncated and a WARN is
 /// emitted; no error is returned.
 pub(crate) fn extract_all(root: &Node<'_>, source: &str, language: &str, wanted: Wanted, out: &mut ProcessResult) {
-    let mut collector = Collector::new(source, language, wanted);
+    // ~keep SQL declarations are read by their own adapter (`super::sql`): the
+    // ~keep grammar shares node names with the generic arms while meaning
+    // ~keep something else (a plpgsql DECLARE variable is a `function_declaration`),
+    // ~keep so the language-neutral structure and symbol matchers must not see it.
+    let declarative = language == "sql";
+    let generic = Wanted {
+        structure: wanted.structure && !declarative,
+        symbols: wanted.symbols && !declarative,
+        ..wanted
+    };
+    let mut collector = Collector::new(source, language, generic);
     let truncated = walk_bounded(root, |node, depth| collector.visit(node, depth));
     warn_if_truncated(truncated, "intel::extract", language);
     collector.finish(out);
+    if wanted.structure && declarative {
+        out.structure = super::sql::structure(root, source);
+    }
     // ~keep Counts are reported once here, after the walk: a per-node event would
     // ~keep reintroduce the per-node cost this single-pass design exists to remove.
     tracing::debug!(

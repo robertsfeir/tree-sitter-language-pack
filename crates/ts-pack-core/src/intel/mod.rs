@@ -11,6 +11,7 @@ pub(crate) mod extract;
 pub mod intelligence;
 #[cfg(test)]
 mod legacy;
+pub(crate) mod sql;
 #[cfg(test)]
 mod test_support;
 pub mod types;

@@ -38,6 +38,40 @@ pub(super) fn span_from_node(node: &tree_sitter::Node) -> Span {
     }
 }
 
+/// The span from `start` to `end` (exclusive) in `source`, with the trailing
+/// whitespace trimmed off, so a declaration whose grammar node swallows the
+/// blank lines after it still ends on its last line of content.
+pub(super) fn span_between(source: &str, start: usize, end: usize) -> Span {
+    let end = start + source.get(start..end).map_or(0, |text| text.trim_end().len());
+    let (start_line, start_column) = position_at(source, start);
+    let (end_line, end_column) = position_at(source, end);
+    Span {
+        start_byte: start,
+        end_byte: end,
+        start_line,
+        start_column,
+        end_line,
+        end_column,
+    }
+}
+
+/// [`span_between`] over a node's own byte range.
+pub(super) fn span_trimmed(node: &tree_sitter::Node, source: &str) -> Span {
+    span_between(source, node.start_byte(), node.end_byte())
+}
+
+/// Zero-indexed row and byte column of `byte` in `source`.
+fn position_at(source: &str, byte: usize) -> (usize, usize) {
+    let before = &source.as_bytes()[..byte.min(source.len())];
+    let row = memchr::memchr_iter(b'\n', before).count();
+    let column = before.len()
+        - before
+            .iter()
+            .rposition(|b| *b == b'\n')
+            .map_or(0, |newline| newline + 1);
+    (row, column)
+}
+
 pub(super) fn node_text<'a>(node: &tree_sitter::Node, source: &'a str) -> &'a str {
     &source[node.start_byte()..node.end_byte()]
 }
