@@ -1,3 +1,7 @@
+//! Regression coverage for configuration formats whose data tree lost paths, items or documents.
+#![allow(clippy::unwrap_used, clippy::expect_used)] // ~keep: a failed setup step in a test must abort loudly
+#![allow(clippy::print_stdout)] // ~keep: the deep-key probe reports to its parent process on stdout
+
 use tree_sitter_language_pack::{DataNode, ProcessConfig, process};
 
 fn data(source: &str, language: &str) -> DataNode {
