@@ -7,7 +7,7 @@
 //! # Supported languages (cut-1)
 //!
 //! **Bucket A — field-named pair grammars:**
-//! `json`, `hjson`, `json5`, `toml`, `properties`, `hcl`, `hocon`, `kdl`
+//! `json`, `hjson`, `json5`, `toml`, `properties`, `hcl`, `terraform`, `hocon`, `kdl`
 //!
 //! **Bucket B — positional / two-child grammars:**
 //! `yaml`, `ini`, `editorconfig`, `csv`, `psv`, `po`, `nginx`, `caddy`
@@ -56,7 +56,7 @@ pub(crate) fn extract_data(root: &Node, source: &str, language: &str) -> Option<
         "json" | "hjson" | "json5" => extract_json(root, source, truncated),
         "toml" => extract_toml(root, source, truncated),
         "properties" => extract_properties(root, source),
-        "hcl" | "hocon" => extract_hcl(root, source, truncated),
+        "hcl" | "terraform" | "hocon" => extract_hcl(root, source, truncated),
         "kdl" => extract_kdl(root, source, truncated),
         "cue" => extract_cue(root, source, truncated),
         "yaml" => extract_yaml(root, source, truncated),
@@ -126,11 +126,18 @@ fn named_child_of_kind<'a>(node: &Node<'a>, kind: &str) -> Option<Node<'a>> {
 
 fn extract_json(root: &Node, source: &str, truncated: &mut usize) -> Option<DataNode> {
     let mut cursor = root.walk();
+    let mut result = None;
     for child in root.named_children(&mut cursor) {
-        let node = json_value_node(&child, source, None, 0, truncated);
-        if node.is_some() {
-            return node;
+        if let Some(node) = json_value_node(&child, source, None, 0, truncated) {
+            // The grammar accepts concatenated values, but they are not one JSON document.
+            if result.is_some() {
+                return None;
+            }
+            result = Some(node);
         }
+    }
+    if result.is_some() {
+        return result;
     }
     Some(DataNode {
         kind: DataNodeKind::KeyValue,
@@ -181,7 +188,9 @@ fn json_value_node(
                 .map(|n| strip_quotes(node_text(&n, source)).to_string());
             let v_node = node.child_by_field_name("value");
             if let Some(v) = v_node {
-                json_value_node(&v, source, k, depth + 1, truncated)
+                let mut value = json_value_node(&v, source, k, depth + 1, truncated)?;
+                value.span = span_from_node(node);
+                Some(value)
             } else {
                 None
             }
@@ -274,7 +283,7 @@ fn toml_pair_node(node: &Node, source: &str, depth: usize, truncated: &mut usize
         return None;
     }
     let key_node = &named[0];
-    let key = node_text(key_node, source).to_string();
+    let key = toml_key(key_node, source);
     if named.len() == 1 {
         return Some(DataNode {
             kind: DataNodeKind::KeyValue,
@@ -285,7 +294,7 @@ fn toml_pair_node(node: &Node, source: &str, depth: usize, truncated: &mut usize
             span: span_from_node(node),
         });
     }
-    let val_node = &named[named.len() - 1];
+    let val_node = named.iter().skip(1).find(|child| !child.is_extra())?;
     toml_value_node(val_node, source, Some(key), depth + 1, truncated)
 }
 
@@ -314,7 +323,11 @@ fn toml_value_node(
         "array" => {
             let mut result = Vec::new();
             let mut cursor = node.walk();
-            for (idx, child) in node.named_children(&mut cursor).enumerate() {
+            for (idx, child) in node
+                .named_children(&mut cursor)
+                .filter(|child| !child.is_extra())
+                .enumerate()
+            {
                 if let Some(n) = toml_value_node(&child, source, Some(idx.to_string()), depth + 1, truncated) {
                     result.push(n);
                 }
@@ -348,7 +361,7 @@ fn toml_table_node(node: &Node, source: &str, depth: usize, truncated: &mut usiz
     if named.is_empty() {
         return None;
     }
-    let key = node_text(&named[0], source).to_string();
+    let key = toml_key(&named[0], source);
     let children: Vec<DataNode> = named[1..]
         .iter()
         .filter(|c| c.kind() == "pair")
@@ -373,7 +386,7 @@ fn toml_table_array_node(node: &Node, source: &str, depth: usize, truncated: &mu
     if named.is_empty() {
         return None;
     }
-    let key = node_text(&named[0], source).to_string();
+    let key = toml_key(&named[0], source);
     let children: Vec<DataNode> = named[1..]
         .iter()
         .filter(|c| c.kind() == "pair")
@@ -387,6 +400,18 @@ fn toml_table_array_node(node: &Node, source: &str, depth: usize, truncated: &mu
         children,
         span: span_from_node(node),
     })
+}
+
+fn toml_key(node: &Node, source: &str) -> String {
+    if node.kind() == "dotted_key" {
+        let mut cursor = node.walk();
+        node.named_children(&mut cursor)
+            .map(|child| toml_key(&child, source))
+            .collect::<Vec<_>>()
+            .join(".")
+    } else {
+        strip_quotes(node_text(node, source)).to_string()
+    }
 }
 
 fn extract_properties(root: &Node, source: &str) -> Option<DataNode> {
@@ -498,7 +523,7 @@ fn hcl_block_node(node: &Node, source: &str, depth: usize, truncated: &mut usize
     let key_parts: Vec<&str> = named
         .iter()
         .filter(|n| n.kind() == "identifier" || n.kind() == "string_lit")
-        .map(|n| node_text(n, source))
+        .map(|n| strip_quotes(node_text(n, source)))
         .collect();
     let key = if key_parts.is_empty() {
         node_text(&named[0], source).to_string()
@@ -691,7 +716,7 @@ fn yaml_children(node: &Node, source: &str, depth: usize, truncated: &mut usize)
             "block_mapping" | "flow_mapping" => {
                 result.extend(yaml_children(&child, source, depth + 1, truncated));
             }
-            "block_sequence" => {
+            "block_sequence" | "flow_sequence" => {
                 let items = yaml_sequence_items(&child, source, depth + 1, truncated);
                 result.extend(items);
             }
@@ -714,10 +739,9 @@ fn yaml_mapping_pair(node: &Node, source: &str, depth: usize, truncated: &mut us
     let key_node = node.child_by_field_name("key");
     let val_node = node.child_by_field_name("value");
 
-    let key = key_node.map(|n| {
-        let raw = node_text(&n, source);
-        strip_quotes(raw).to_string()
-    });
+    // A structured YAML key has no scalar path. Copying its source into key
+    // would misclassify nested values as key metadata.
+    let key = Some(yaml_scalar_key(&key_node?, source)?);
 
     if let Some(val) = val_node {
         let val_kind = val.kind();
@@ -755,33 +779,55 @@ fn yaml_mapping_pair(node: &Node, source: &str, depth: usize, truncated: &mut us
     })
 }
 
+fn yaml_scalar_key(node: &Node, source: &str) -> Option<String> {
+    match node.kind() {
+        "plain_scalar" | "single_quote_scalar" | "double_quote_scalar" | "block_scalar" => {
+            Some(strip_quotes(node_text(node, source)).to_string())
+        }
+        "flow_node" | "block_node" => {
+            let mut cursor = node.walk();
+            node.named_children(&mut cursor)
+                .find_map(|child| yaml_scalar_key(&child, source))
+        }
+        _ => None,
+    }
+}
+
 fn yaml_sequence_items(node: &Node, source: &str, depth: usize, truncated: &mut usize) -> Vec<DataNode> {
     let mut result = Vec::new();
     if depth_exceeded(node, depth, truncated) {
         return result;
     }
     let mut cursor = node.walk();
-    for (idx, child) in node.named_children(&mut cursor).enumerate() {
-        if child.kind() == "block_sequence_item" {
-            let sub = yaml_children(&child, source, depth + 1, truncated);
-            let value = if sub.is_empty() {
-                let mut c2 = child.walk();
-                child
-                    .named_children(&mut c2)
-                    .next()
-                    .map(|n| strip_quotes(node_text(&n, source)).to_string())
-            } else {
-                None
-            };
-            result.push(DataNode {
-                kind: DataNodeKind::Sequence,
-                key: Some(idx.to_string()),
-                value,
-                attributes: vec![],
-                children: sub,
-                span: span_from_node(&child),
-            });
-        }
+    for (idx, child) in node
+        .named_children(&mut cursor)
+        .filter(|child| matches!(child.kind(), "block_sequence_item" | "flow_node" | "flow_pair"))
+        .enumerate()
+    {
+        let sub = if child.kind() == "flow_pair" {
+            yaml_mapping_pair(&child, source, depth + 1, truncated)
+                .into_iter()
+                .collect()
+        } else {
+            yaml_children(&child, source, depth + 1, truncated)
+        };
+        let value = if sub.is_empty() {
+            let mut c2 = child.walk();
+            child
+                .named_children(&mut c2)
+                .next()
+                .map(|n| strip_quotes(node_text(&n, source)).to_string())
+        } else {
+            None
+        };
+        result.push(DataNode {
+            kind: DataNodeKind::Sequence,
+            key: Some(idx.to_string()),
+            value,
+            attributes: vec![],
+            children: sub,
+            span: span_from_node(&child),
+        });
     }
     result
 }
