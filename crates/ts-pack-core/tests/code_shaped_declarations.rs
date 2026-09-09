@@ -223,6 +223,36 @@ fn sql_recovery_reads_a_schema_the_lexer_handed_over_as_a_keyword() {
     }
 }
 
+#[test]
+fn sql_table_the_parser_ran_past_its_terminator_ends_there() {
+    // Shrunk from a real DDL proof: the REFERENCES clause and the GRANTs after
+    // it fold the next CREATE TABLE into the first table's node, and the lexer
+    // drops that second table's name token, so it yields nothing rather than
+    // a name it never had.
+    let source = "\
+CREATE TABLE tinker_platform_release_files (
+  platform_file_id     uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  platform_release_id  uuid        NOT NULL
+    REFERENCES tinker_platform_releases (platform_release_id) ON DELETE CASCADE,
+  CONSTRAINT tinker_platform_release_files_path_key UNIQUE (platform_release_id, rel_path)
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON tinker_platform_release_files TO kyroco_publisher;
+REVOKE INSERT, UPDATE, DELETE ON tinker_platform_release_files FROM engram_app;
+CREATE TABLE tinker_promotion_audit (
+  audit_id        uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  CONSTRAINT tinker_promotion_audit_direction_chk
+    CHECK (direction IN ('promote','demote'))
+);
+";
+    let result = extract(source, "sql");
+    assert_eq!(
+        summary(&result.structure),
+        vec![(Some("tinker_platform_release_files"), &StructureKind::Struct, 0, 5)]
+    );
+    let table = &result.structure[0].span;
+    assert!(source[table.start_byte..table.end_byte].ends_with(");"));
+}
+
 const JUSTFILE: &str = "\
 set shell := [\"bash\", \"-eu\", \"-c\"]
 
