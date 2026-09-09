@@ -670,7 +670,12 @@ pub(super) fn symbol_at(node: &tree_sitter::Node, source: &str, language: &str) 
                 || node
                     .child_by_field_name("value")
                     .and_then(unparenthesized)
-                    .is_some_and(|value| matches!(value.kind(), "arrow_function" | "function_expression"))
+                    .is_some_and(|value| {
+                        matches!(
+                            value.kind(),
+                            "arrow_function" | "function_expression" | "generator_function"
+                        )
+                    })
             {
                 return None;
             }
@@ -732,6 +737,9 @@ fn swift_nominal_kind(node: &tree_sitter::Node) -> Option<StructureKind> {
 }
 
 /// New constant declarations belong to file/type scope, not executable bodies.
+///
+/// Generators are their own node kinds in the JavaScript family, with or
+/// without `async`, so they are listed beside the plain function forms.
 fn in_declaration_scope(node: &tree_sitter::Node) -> bool {
     let mut parent = node.parent();
     while let Some(ancestor) = parent {
@@ -739,6 +747,8 @@ fn in_declaration_scope(node: &tree_sitter::Node) -> bool {
             ancestor.kind(),
             "function_declaration"
                 | "function_expression"
+                | "generator_function_declaration"
+                | "generator_function"
                 | "arrow_function"
                 | "method_definition"
                 | "function_body"

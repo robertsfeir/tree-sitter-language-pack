@@ -226,3 +226,16 @@ fn typescript_namespace_supplies_the_exact_owner_span_for_alias_symbols() {
         assert_eq!((alias.span.start_line, alias.span.end_line), (1, 1));
     }
 }
+
+#[test]
+fn generator_bodies_are_not_declaration_scope() {
+    let source = "const KEPT = 5;\nfunction* gen() {\n  const local = 1;\n  yield local;\n}\nasync function* agen() {\n  const inner = 2;\n  yield inner;\n}\nconst plain = function* () {\n  const expr = 3;\n  yield expr;\n};\nconst asyncPlain = async function* () {\n  const aexpr = 4;\n  yield aexpr;\n};\nfunction control() {\n  const ordinary = 6;\n  return ordinary;\n}\n";
+    let result = extract(source, "javascript");
+    let constants: Vec<_> = result
+        .symbols
+        .iter()
+        .filter(|symbol| symbol.kind == SymbolKind::Constant)
+        .map(|symbol| symbol.name.as_str())
+        .collect();
+    assert_eq!(constants, vec!["KEPT"]);
+}
