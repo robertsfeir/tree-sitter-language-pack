@@ -9,6 +9,7 @@ pub(crate) mod data_extraction;
 pub(crate) mod elixir;
 pub(crate) mod extract;
 pub mod intelligence;
+pub(crate) mod just;
 #[cfg(test)]
 mod legacy;
 pub(crate) mod sql;
