@@ -69,12 +69,13 @@ impl Wanted {
 /// [`super::walk::MAX_TREE_DEPTH`] the results are truncated and a WARN is
 /// emitted; no error is returned.
 pub(crate) fn extract_all(root: &Node<'_>, source: &str, language: &str, wanted: Wanted, out: &mut ProcessResult) {
-    // ~keep SQL, Just and Dockerfile declarations are read by their own adapters
-    // ~keep (`super::sql`, `super::just`, `super::dockerfile`): their grammars
-    // ~keep share node names with the generic arms while meaning something else
-    // ~keep (a plpgsql DECLARE variable is a `function_declaration`), so the
+    // ~keep SQL, Just, Dockerfile and C declarations are read by their own
+    // ~keep adapters (`super::sql`, `super::just`, `super::dockerfile`, `super::c`):
+    // ~keep their grammars share node names with the generic arms while meaning
+    // ~keep something else (a plpgsql DECLARE variable is a `function_declaration`;
+    // ~keep a C prototype is a `declaration` the generic arms never see), so the
     // ~keep language-neutral structure and symbol matchers must not see them.
-    let declarative = matches!(language, "sql" | "just" | "dockerfile");
+    let declarative = matches!(language, "sql" | "just" | "dockerfile" | "c");
     let generic = Wanted {
         structure: wanted.structure && !declarative,
         symbols: wanted.symbols && !declarative,
@@ -88,6 +89,7 @@ pub(crate) fn extract_all(root: &Node<'_>, source: &str, language: &str, wanted:
         out.structure = match language {
             "sql" => super::sql::structure(root, source),
             "just" => super::just::structure(root, source),
+            "c" => super::c::structure(root, source),
             _ => super::dockerfile::structure(root, source),
         };
     }
