@@ -92,11 +92,13 @@ fn declaration(node: &Node<'_>, source: &str) -> Option<StructureItem> {
         .and_then(|parent| parent.next_sibling())
         .filter(|sibling| sibling.kind() == ";")
         .map_or(node.end_byte(), |terminator| terminator.end_byte());
-    // ~keep Error recovery can run a routine's body past its own closing quote and
-    // ~keep swallow the next statement into it. The body ends at that quote, and
-    // ~keep the swallowed statement is read back by the recovery pass.
-    let end = match head.routine.then(|| routine_close(&leaves, head.consumed)).flatten() {
-        Some(close) if close + 1 < leaves.len() => terminated(&leaves, close),
+    // ~keep Error recovery can run a node past its own end (a routine past its
+    // ~keep closing quote, a table past its terminator) and swallow the statements
+    // ~keep after it. No declaration holds a `;` of its own, so the node ends at
+    // ~keep the first one, and the swallowed statements are read back by the
+    // ~keep recovery pass.
+    let end = match recovered_end(&leaves, head.consumed, head.routine) {
+        Some(inside) if inside < node.end_byte() => inside,
         _ => after_node,
     };
     Some(item(head, node.start_byte(), end, source))
