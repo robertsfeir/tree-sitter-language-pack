@@ -4,6 +4,7 @@
 //! It analyzes source code to extract structure, imports, exports, comments,
 //! docstrings, symbols, and diagnostics.
 
+pub(crate) mod c;
 pub mod chunking;
 pub(crate) mod data_extraction;
 pub(crate) mod dockerfile;
