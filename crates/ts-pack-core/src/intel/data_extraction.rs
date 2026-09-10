@@ -1214,17 +1214,13 @@ fn xml_element_node(node: &Node, source: &str, depth: usize, truncated: &mut usi
         })
         .unwrap_or_default();
 
-    let text_value = named
-        .iter()
-        .find(|c| c.kind() == "content")
-        .and_then(|content| {
-            let mut c2 = content.walk();
-            content
-                .named_children(&mut c2)
-                .find(|gc| gc.kind() == "CharData" || gc.kind() == "CData")
-                .map(|n| node_text(&n, source).trim().to_string())
-        })
-        .filter(|s| !s.is_empty());
+    // ~keep The whole text run, not its first node: an entity reference or a
+    // ~keep CDATA section splits it. Trimmed here, unlike a property list
+    // ~keep scalar, because an element holding only layout whitespace between
+    // ~keep its children carries no value.
+    let text_value = xml_text(node, source)
+        .map(|text| text.trim().to_string())
+        .filter(|text| !text.is_empty());
 
     let children: Vec<DataNode> = named
         .iter()
@@ -1287,7 +1283,12 @@ fn plist_value_node(
         "dict" => (None, plist_dict_children(node, source, depth + 1, truncated)),
         "array" => (None, plist_array_children(node, source, depth + 1, truncated)),
         "true" | "false" => (Some(tag.clone()), vec![]),
-        _ => (Some(xml_text(node, source).unwrap_or_default()), vec![]),
+        // ~keep A `<string>` carries its whitespace: " padded " is that value,
+        // ~keep not "padded". The other scalars are a number or a date, which
+        // ~keep an XML writer is free to indent onto its own line, so those
+        // ~keep trim.
+        "string" => (Some(xml_text(node, source).unwrap_or_default()), vec![]),
+        _ => (Some(plist_trimmed_text(node, source)), vec![]),
     };
     DataNode {
         kind,
@@ -1297,6 +1298,13 @@ fn plist_value_node(
         children,
         span: span_from_node(node),
     }
+}
+
+/// An element's text with surrounding layout whitespace removed, for the
+/// plist parts that name rather than carry a value: a `<key>`, and the
+/// scalars an XML writer may indent onto their own line.
+fn plist_trimmed_text(node: &Node, source: &str) -> String {
+    xml_text(node, source).map_or_else(String::new, |text| text.trim().to_string())
 }
 
 fn plist_dict_children(node: &Node, source: &str, depth: usize, truncated: &mut usize) -> Vec<DataNode> {
@@ -1315,7 +1323,7 @@ fn plist_dict_children(node: &Node, source: &str, depth: usize, truncated: &mut 
         let value = &elements[index + 1];
         let mut entry = plist_value_node(
             value,
-            Some(xml_text(key, source).unwrap_or_default()),
+            Some(plist_trimmed_text(key, source)),
             DataNodeKind::KeyValue,
             source,
             depth,
@@ -1372,13 +1380,69 @@ fn xml_tag_name(node: &Node, source: &str) -> Option<String> {
         .map(|name| node_text(&name, source).to_string())
 }
 
+/// The complete text of an element, in source order.
+///
+/// A text run is not one node. An entity reference (`&amp;`), a character
+/// reference (`&#65;`) and a CDATA section each interrupt it, so `a&amp;b`
+/// arrives as `CharData EntityRef CharData` and reading the first child alone
+/// truncates the value at the first `&`. CDATA is a `CData` beneath a
+/// `CDSect`, never a direct child of `content`, so a direct-child search for
+/// it finds nothing and the value reads empty.
+///
+/// The text is returned as written, untrimmed: whitespace is significant in a
+/// property list `<string>`, and the caller decides whether it matters.
 fn xml_text(node: &Node, source: &str) -> Option<String> {
     let content = named_child_of_kind(node, "content")?;
     let mut cursor = content.walk();
-    content
-        .named_children(&mut cursor)
-        .find(|gc| gc.kind() == "CharData" || gc.kind() == "CData")
-        .map(|n| node_text(&n, source).trim().to_string())
+    let mut text = String::new();
+    for part in content.named_children(&mut cursor) {
+        append_xml_text(&part, source, &mut text);
+    }
+    Some(text)
+}
+
+/// Append one `content` child's contribution to `text`. Nested one level for
+/// `CDSect`, which is as deep as the grammar puts character data; nothing
+/// here recurses on tree depth.
+fn append_xml_text(part: &Node, source: &str, text: &mut String) {
+    match part.kind() {
+        "CharData" | "CData" => text.push_str(node_text(part, source)),
+        "EntityRef" | "CharRef" => text.push_str(&resolve_xml_reference(node_text(part, source))),
+        "CDSect" => {
+            let mut cursor = part.walk();
+            for inner in part.named_children(&mut cursor) {
+                if inner.kind() == "CData" {
+                    text.push_str(node_text(&inner, source));
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The character an XML reference stands for.
+///
+/// The five predefined entities and numeric character references resolve. Any
+/// other entity is declared in a DTD this reader does not read, so it is kept
+/// as written rather than dropped, which would silently lose text.
+fn resolve_xml_reference(reference: &str) -> String {
+    match reference {
+        "&amp;" => return "&".to_string(),
+        "&lt;" => return "<".to_string(),
+        "&gt;" => return ">".to_string(),
+        "&quot;" => return "\"".to_string(),
+        "&apos;" => return "'".to_string(),
+        _ => {}
+    }
+    reference
+        .strip_prefix("&#")
+        .and_then(|rest| rest.strip_suffix(';'))
+        .and_then(|digits| match digits.strip_prefix(['x', 'X']) {
+            Some(hex) => u32::from_str_radix(hex, 16).ok(),
+            None => digits.parse::<u32>().ok(),
+        })
+        .and_then(char::from_u32)
+        .map_or_else(|| reference.to_string(), String::from)
 }
 
 /// A dotenv file is a flat list of `KEY=value` lines, so every assignment is

@@ -287,6 +287,100 @@ fn xml_that_is_not_a_plist_keeps_its_element_paths() {
     assert_eq!(root.children[0].children[0].key.as_deref(), Some("key"));
 }
 
+/// A text run is not one node: an entity reference, a character reference and
+/// a CDATA section each split it, and CDATA hangs below a `CDSect` rather
+/// than beside the text. Reading the first child alone truncated a key at its
+/// first `&` and read a CDATA value as empty.
+#[test]
+fn plist_text_survives_entities_character_references_and_cdata() {
+    let source = "\
+<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<plist version=\"1.0\">
+<dict>
+  <key>A&amp;B</key>
+  <string>left&amp;right</string>
+  <key>Cdata</key>
+  <string><![CDATA[raw <tag> & text]]></string>
+  <key>Mixed</key>
+  <string>before<![CDATA[ middle ]]>after</string>
+  <key>Numeric</key>
+  <string>a&#65;b&#x42;c</string>
+  <key>Unknown</key>
+  <string>x&nbsp;y</string>
+</dict>
+</plist>
+";
+    let root = data(source, "xml");
+    let entries: Vec<(Option<&str>, Option<&str>)> = root
+        .children
+        .iter()
+        .map(|entry| (entry.key.as_deref(), entry.value.as_deref()))
+        .collect();
+    assert_eq!(
+        entries,
+        vec![
+            // The key keeps the whole run, so it is not renamed to "A".
+            (Some("A&B"), Some("left&right")),
+            (Some("Cdata"), Some("raw <tag> & text")),
+            (Some("Mixed"), Some("before middle after")),
+            (Some("Numeric"), Some("aAbBc")),
+            // An entity this reader cannot resolve without the DTD is kept as
+            // written rather than dropped, which would lose text silently.
+            (Some("Unknown"), Some("x&nbsp;y")),
+        ]
+    );
+}
+
+/// Whitespace inside a property list `<string>` is part of the value, so it
+/// is carried; a `<key>` and the scalars an XML writer may indent onto their
+/// own line are names and still trim.
+#[test]
+fn plist_string_values_keep_their_whitespace_and_keys_do_not() {
+    let source = "\
+<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<plist version=\"1.0\">
+<dict>
+  <key>  Padded Key  </key>
+  <string>  padded value  </string>
+  <key>Number</key>
+  <integer>
+    42
+  </integer>
+</dict>
+</plist>
+";
+    let root = data(source, "xml");
+    let entries: Vec<(Option<&str>, Option<&str>)> = root
+        .children
+        .iter()
+        .map(|entry| (entry.key.as_deref(), entry.value.as_deref()))
+        .collect();
+    assert_eq!(
+        entries,
+        vec![
+            (Some("Padded Key"), Some("  padded value  ")),
+            (Some("Number"), Some("42")),
+        ]
+    );
+}
+
+/// The same truncation lived a second time, inlined, in the generic XML
+/// reader, where the maintainer's review did not reach it.
+#[test]
+fn generic_xml_element_text_survives_entities_and_cdata() {
+    let root = data("<r><a>one&amp;two</a><b><![CDATA[cdata body]]></b></r>\n", "xml");
+    let element = &root.children[0];
+    let values: Vec<(Option<&str>, Option<&str>)> = element
+        .children
+        .iter()
+        .map(|child| (child.key.as_deref(), child.value.as_deref()))
+        .collect();
+    assert_eq!(
+        values,
+        vec![(Some("a"), Some("one&two")), (Some("b"), Some("cdata body"))]
+    );
+}
+
 #[test]
 fn dotenv_assignments_are_keyed_scalars_with_values_as_written() {
     let source = "\
