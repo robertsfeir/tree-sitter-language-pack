@@ -2,11 +2,18 @@
 //!
 //! The C grammar names a definition and a prototype differently: a
 //! `function_definition` has a body, while a prototype is a `declaration`
-//! whose declarator is a `function_declarator` applied directly to an
-//! identifier. Both are functions here, because a header's prototypes are the
-//! declarations a reader of that header is looking for. A declaration whose
-//! function declarator wraps a parenthesised pointer (`int (*f)(int);`) is a
-//! function pointer variable, and variables declare nothing here.
+//! whose declarator is a `function_declarator`. Both are functions here,
+//! because a header's prototypes are the declarations a reader of that header
+//! is looking for.
+//!
+//! A prototype is not written only one way, so the declarator is followed
+//! rather than matched: `int plain(int);` names its function directly,
+//! `int (foo)(int);` wraps the name in redundant parentheses, and
+//! `int (*factory(void))(int);` returns a function pointer and names its
+//! function under an inner declarator. What separates those from
+//! `int (*variable)(int);`, which is a function pointer VARIABLE and declares
+//! no function, is whether a function declarator applies to the name. See
+//! [`prototype_name`], which carries the measured shapes.
 //!
 //! A `struct`, `union` or `enum` is an item only where it is defined, which
 //! the grammar marks with a `body`, and only where it has a name: a nameless
@@ -24,7 +31,7 @@
 
 use tree_sitter::Node;
 
-use super::intelligence::{node_text, span_between, span_trimmed};
+use super::intelligence::{node_text, span_between_from};
 use super::types::*;
 use super::walk::{Descend, walk_bounded, warn_if_truncated};
 
@@ -132,23 +139,81 @@ fn innermost_identifier<'tree>(node: Node<'tree>) -> Option<Node<'tree>> {
     None
 }
 
-/// The name a prototype declares: pointers may wrap the function declarator,
-/// but the declarator itself must apply to a bare identifier.
+/// The name a prototype declares, or `None` where the declaration declares a
+/// variable instead.
+///
+/// C spells a function declaration more than one way, and the grammar mirrors
+/// each. Measured against the real parser:
+///
+/// - `int plain(int);` is `function_declarator > identifier`.
+/// - `int (foo)(int);` wraps the name in parentheses, which are redundant but
+///   legal: `function_declarator > parenthesized_declarator > identifier`.
+/// - `int (*factory(void))(int);` is a function returning a function pointer:
+///   the OUTER `function_declarator` belongs to the returned pointer, and the
+///   name sits under an inner one,
+///   `function_declarator > parenthesized_declarator > pointer_declarator >
+///   function_declarator > identifier`.
+/// - `int (*variable)(int);` is a function POINTER VARIABLE and declares no
+///   function: `function_declarator > parenthesized_declarator >
+///   pointer_declarator > identifier`.
+///
+/// The last two differ only in what sits below the pointer, so the rule is
+/// what a pointer is crossed *to*: reaching an identifier through a pointer
+/// with no function declarator in between is a variable, while an inner
+/// function declarator is a function and names it. Requiring an immediate
+/// identifier, as this did before, dropped the middle two.
 ///
 /// Iterative for the same reason as [`innermost_identifier`].
 fn prototype_name<'tree>(declarator: &Node<'tree>) -> Option<Node<'tree>> {
     let mut current = *declarator;
     loop {
         match current.kind() {
-            "pointer_declarator" => current = current.child_by_field_name("declarator")?,
-            "function_declarator" => {
-                return current
+            // ~keep A pointer between here and the name belongs to a
+            // ~keep variable: `int (*variable)(int);` is a function pointer,
+            // ~keep and the function declarator above it describes the type
+            // ~keep pointed at, not something this file declares. The name is
+            // ~keep only reachable through an inner function declarator, so
+            // ~keep descend and let that arm decide.
+            "pointer_declarator" | "parenthesized_declarator" => {
+                current = current
                     .child_by_field_name("declarator")
-                    .filter(|inner| inner.kind() == "identifier");
+                    .or_else(|| sole_declarator(&current))?;
+            }
+            "function_declarator" => {
+                let inner = current.child_by_field_name("declarator")?;
+                // ~keep The declarator this function applies to. A bare
+                // ~keep identifier, or one wrapped only in parentheses, is
+                // ~keep the function's own name.
+                match inner.kind() {
+                    "identifier" => return Some(inner),
+                    "parenthesized_declarator" => {
+                        let sole = sole_declarator(&inner)?;
+                        if sole.kind() == "identifier" {
+                            return Some(sole);
+                        }
+                        // ~keep A further declarator, so the name below it is
+                        // ~keep named by ITS function declarator if it has
+                        // ~keep one: `int (*factory(void))(int);` returns a
+                        // ~keep function pointer and declares `factory`.
+                        // ~keep Looping rather than recursing, because a
+                        // ~keep declarator chain is as deep as the source
+                        // ~keep makes it.
+                        current = sole;
+                    }
+                    _ => current = inner,
+                }
             }
             _ => return None,
         }
     }
+}
+
+/// The declarator inside a `parenthesized_declarator`, which the grammar
+/// holds as an unnamed child rather than in the `declarator` field.
+fn sole_declarator<'tree>(node: &Node<'tree>) -> Option<Node<'tree>> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|child| child.kind().ends_with("declarator") || child.kind() == "identifier")
 }
 
 /// A named aggregate defined in the `type` field of a typedef or declaration.
@@ -177,11 +242,8 @@ fn aggregate(node: &Node<'_>, source: &str) -> Option<StructureItem> {
 }
 
 fn item(kind: StructureKind, name: &Node<'_>, node: &Node<'_>, end: usize, source: &str) -> StructureItem {
-    let span = if end == node.end_byte() {
-        span_trimmed(node, source)
-    } else {
-        span_between(source, node.start_byte(), end)
-    };
+    let start = node.start_position();
+    let span = span_between_from(source, node.start_byte(), end, (start.row, start.column));
     StructureItem {
         kind,
         name: Some(node_text(name, source).to_string()),

@@ -461,6 +461,35 @@ fn c_definitions_prototypes_aggregates_typedefs_and_macros_are_declarations() {
     assert!(result.symbols.is_empty(), "C emits no flat symbols");
 }
 
+/// C spells a function declaration more than one way, and requiring the
+/// function declarator to apply to a bare identifier saw only the plainest.
+/// A redundant pair of parentheses around the name is legal, and a function
+/// returning a function pointer puts its name under an inner declarator.
+/// Neither is a variable, and the function pointer variable that shares their
+/// shape still is.
+#[test]
+fn c_prototypes_behind_parentheses_and_returned_function_pointers_are_functions() {
+    let source = "\
+int (parenthesised)(int);
+int (*factory(void))(int);
+char *(*table_lookup(const char *key))(int, int);
+int (*variable)(int);
+int (*table[4])(int);
+extern int external;
+";
+    let result = extract(source, "c");
+    assert_eq!(
+        summary(&result.structure),
+        vec![
+            (Some("parenthesised"), &StructureKind::Function, 0, 0),
+            (Some("factory"), &StructureKind::Function, 1, 1),
+            (Some("table_lookup"), &StructureKind::Function, 2, 2),
+        ],
+        "a redundant parenthesis and a returned function pointer declare functions; \
+         a function pointer variable, an array of them and a scalar declare none"
+    );
+}
+
 const C_HEADER: &str = "\
 // A guarded header.
 #ifndef WIDGET_H
