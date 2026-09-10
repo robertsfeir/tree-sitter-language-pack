@@ -461,6 +461,93 @@ fn c_definitions_prototypes_aggregates_typedefs_and_macros_are_declarations() {
     assert!(result.symbols.is_empty(), "C emits no flat symbols");
 }
 
+/// The line and column of every span, recomputed from the source text alone.
+///
+/// Independent of how the adapters arrive at a position, so it holds whether
+/// they count from the top of the file or from a position the parser gave
+/// them.
+fn line_and_column(source: &str, byte: usize) -> (usize, usize) {
+    let before = &source.as_bytes()[..byte.min(source.len())];
+    let line = before.iter().filter(|b| **b == b'\n').count();
+    let column = before.len() - before.iter().rposition(|b| *b == b'\n').map_or(0, |at| at + 1);
+    (line, column)
+}
+
+fn assert_spans_agree_with_the_source(source: &str, language: &str) {
+    let result = extract(source, language);
+    assert!(
+        !result.structure.is_empty(),
+        "{language}: nothing extracted, so the spans prove nothing"
+    );
+    let mut pending: Vec<&StructureItem> = result.structure.iter().collect();
+    while let Some(item) = pending.pop() {
+        pending.extend(item.children.iter());
+        let span = &item.span;
+        assert!(
+            span.start_byte <= span.end_byte && span.end_byte <= source.len(),
+            "{language}: {:?} has byte range {}..{} in a {} byte source",
+            item.name,
+            span.start_byte,
+            span.end_byte,
+            source.len()
+        );
+        assert!(
+            source.is_char_boundary(span.start_byte) && source.is_char_boundary(span.end_byte),
+            "{language}: {:?} splits a character",
+            item.name
+        );
+        assert_eq!(
+            (span.start_line, span.start_column),
+            line_and_column(source, span.start_byte),
+            "{language}: {:?} start position disagrees with its byte offset",
+            item.name
+        );
+        assert_eq!(
+            (span.end_line, span.end_column),
+            line_and_column(source, span.end_byte),
+            "{language}: {:?} end position disagrees with its byte offset",
+            item.name
+        );
+    }
+}
+
+/// Positions are anchored on the position the parser already recorded for a
+/// node, rather than counted from the top of the file for every declaration,
+/// which cost O(declarations * length) to extract. The saving is only worth
+/// having if the positions are unchanged, so every span each adapter reports
+/// is checked against the source it came from.
+///
+/// Columns are counted in bytes, so a multi-byte character is where an
+/// anchored count and a counted-from-zero one would part company; the
+/// fixtures carry one on a line before a declaration and inside one.
+#[test]
+fn every_declaration_span_agrees_with_its_own_source() {
+    assert_spans_agree_with_the_source(C_SOURCE, "c");
+    assert_spans_agree_with_the_source(C_HEADER, "c");
+    assert_spans_agree_with_the_source(SQL_DDL, "sql");
+    assert_spans_agree_with_the_source(JUSTFILE, "just");
+    assert_spans_agree_with_the_source(DOCKERFILE, "dockerfile");
+    assert_spans_agree_with_the_source(CEDAR, "cedar");
+
+    assert_spans_agree_with_the_source(
+        "\
+// primera línea, uno más
+int café(int x);
+
+/* ± ² ³ */
+struct punto { int x; };
+
+#define TAMAÑO 10
+int main(void) { return TAMAÑO; }
+",
+        "c",
+    );
+    assert_spans_agree_with_the_source(
+        "-- ¿cuántos?\nCREATE TABLE café (id int);\nCREATE VIEW ± AS SELECT 1;\n",
+        "sql",
+    );
+}
+
 /// C spells a function declaration more than one way, and requiring the
 /// function declarator to apply to a bare identifier saw only the plainest.
 /// A redundant pair of parentheses around the name is legal, and a function

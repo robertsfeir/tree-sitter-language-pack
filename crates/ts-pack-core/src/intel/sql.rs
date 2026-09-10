@@ -22,7 +22,7 @@
 
 use tree_sitter::Node;
 
-use super::intelligence::{node_text, span_between};
+use super::intelligence::{node_text, span_between_from};
 use super::types::*;
 use super::walk::{Descend, walk_bounded, warn_if_truncated};
 
@@ -57,7 +57,7 @@ pub(super) fn structure(root: &Node<'_>, source: &str) -> Vec<StructureItem> {
         let Some(end) = recovered_end(&leaves, head.consumed, head.routine) else {
             continue;
         };
-        items.push(item(head, leaf.start_byte(), end, source));
+        items.push(item(head, leaf, end, source));
     }
     items.sort_by_key(|item| item.span.start_byte);
     items
@@ -101,7 +101,7 @@ fn declaration(node: &Node<'_>, source: &str) -> Option<StructureItem> {
         Some(inside) if inside < node.end_byte() => inside,
         _ => after_node,
     };
-    Some(item(head, node.start_byte(), end, source))
+    Some(item(head, node, end, source))
 }
 
 /// The classified head of a `CREATE` statement: its kind and qualified name,
@@ -162,7 +162,15 @@ fn read_head(leaves: &[Node<'_>], start: usize, source: &str) -> Option<Head> {
     }
     let mut name = qualified_name(leaves, &mut index, source)?;
     if matches!(object, "keyword_trigger" | "keyword_policy") {
-        index = leaves[index..].iter().position(|leaf| leaf.kind() == "keyword_on")? + index + 1;
+        // ~keep get(index..), not leaves[index..]: `qualified_name` can leave
+        // ~keep the index at the end of the leaves, and a truncated
+        // ~keep `CREATE TRIGGER foo` at end of file is exactly that shape.
+        index = leaves
+            .get(index..)?
+            .iter()
+            .position(|leaf| leaf.kind() == "keyword_on")?
+            + index
+            + 1;
         let table = qualified_name(leaves, &mut index, source)?;
         name = format!("{table}.{name}");
     }
@@ -181,8 +189,14 @@ fn read_head(leaves: &[Node<'_>], start: usize, source: &str) -> Option<Head> {
 /// (`:db_name`, `:"role"`) is an error colon before the identifier and is not
 /// a name; a keyword where the name should be means the name was lost.
 fn qualified_name(leaves: &[Node<'_>], index: &mut usize, source: &str) -> Option<String> {
-    if leaves
-        .get(*index - 1)
+    // ~keep checked_sub, not `*index - 1`: the index is a usize, and a caller
+    // ~keep that starts a name at the first leaf would wrap it rather than
+    // ~keep look behind. Reaching here with 0 needs a `CREATE` at index 0,
+    // ~keep which `read_head` cannot produce today; the subtraction is still
+    // ~keep wrong on its own terms and this costs nothing.
+    if (*index)
+        .checked_sub(1)
+        .and_then(|before| leaves.get(before))
         .is_some_and(|before| node_text(before, source) == ":")
     {
         return None;
@@ -266,11 +280,15 @@ fn leaves<'tree>(root: &Node<'tree>) -> impl Iterator<Item = Node<'tree>> {
     })
 }
 
-fn item(head: Head, start: usize, end: usize, source: &str) -> StructureItem {
+/// `start_node` is the node the statement starts at, whose position the
+/// parser has already computed; the span is measured from there rather than
+/// by counting newlines from the top of the file for every statement.
+fn item(head: Head, start_node: &Node<'_>, end: usize, source: &str) -> StructureItem {
+    let start = start_node.start_position();
     StructureItem {
         kind: head.kind,
         name: Some(head.name),
-        span: span_between(source, start, end),
+        span: span_between_from(source, start_node.start_byte(), end, (start.row, start.column)),
         ..StructureItem::default()
     }
 }

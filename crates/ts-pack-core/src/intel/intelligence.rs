@@ -41,10 +41,18 @@ pub(super) fn span_from_node(node: &tree_sitter::Node) -> Span {
 /// The span from `start` to `end` (exclusive) in `source`, with the trailing
 /// whitespace trimmed off, so a declaration whose grammar node swallows the
 /// blank lines after it still ends on its last line of content.
-pub(super) fn span_between(source: &str, start: usize, end: usize) -> Span {
+///
+/// `anchor` is a position already known for `start`, normally the node's own
+/// `start_position()`, which the parser has already computed. Passing it
+/// keeps this off the source prefix. Without an anchor, every call counted
+/// the newlines from byte zero, and counted them twice, so a file of many
+/// short declarations cost O(n * len) to extract. Positions are measured from
+/// the anchor across the span's own text instead, which is work proportional
+/// to the span rather than to everything before it.
+pub(super) fn span_between_from(source: &str, start: usize, end: usize, anchor: (usize, usize)) -> Span {
     let end = start + source.get(start..end).map_or(0, |text| text.trim_end().len());
-    let (start_line, start_column) = position_at(source, start);
-    let (end_line, end_column) = position_at(source, end);
+    let (start_line, start_column) = anchor;
+    let (end_line, end_column) = advance_position(source, start, anchor, end);
     Span {
         start_byte: start,
         end_byte: end,
@@ -55,9 +63,31 @@ pub(super) fn span_between(source: &str, start: usize, end: usize) -> Span {
     }
 }
 
-/// [`span_between`] over a node's own byte range.
+/// [`span_between_from`] over a node's own byte range, anchored on the
+/// position the parser already recorded for it.
 pub(super) fn span_trimmed(node: &tree_sitter::Node, source: &str) -> Span {
-    span_between(source, node.start_byte(), node.end_byte())
+    let start = node.start_position();
+    span_between_from(source, node.start_byte(), node.end_byte(), (start.row, start.column))
+}
+
+/// The position of `to`, measured forward from `from` at `position`.
+///
+/// Costs the length of the span rather than the length of the prefix before
+/// it, so a walk over many declarations stays linear in the source overall.
+fn advance_position(source: &str, from: usize, position: (usize, usize), to: usize) -> (usize, usize) {
+    let (mut row, mut column) = position;
+    let Some(text) = source.get(from..to) else {
+        return position_at(source, to);
+    };
+    let bytes = text.as_bytes();
+    match memchr::memrchr(b'\n', bytes) {
+        Some(last) => {
+            row += memchr::memchr_iter(b'\n', bytes).count();
+            column = bytes.len() - (last + 1);
+        }
+        None => column += bytes.len(),
+    }
+    (row, column)
 }
 
 /// Zero-indexed row and byte column of `byte` in `source`.

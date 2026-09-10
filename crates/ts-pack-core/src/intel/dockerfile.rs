@@ -28,11 +28,15 @@ pub(super) fn structure(root: &Node<'_>, source: &str) -> Vec<StructureItem> {
         match node.kind() {
             "from_instruction" => {
                 close(&mut stage, &mut items, source);
-                stage = node.child_by_field_name("as").map(|alias| Stage {
-                    name: node_text(&alias, source).to_string(),
-                    start: node.start_byte(),
-                    end: node.end_byte(),
-                    children: Vec::new(),
+                stage = node.child_by_field_name("as").map(|alias| {
+                    let start = node.start_position();
+                    Stage {
+                        name: node_text(&alias, source).to_string(),
+                        start: node.start_byte(),
+                        start_position: (start.row, start.column),
+                        end: node.end_byte(),
+                        children: Vec::new(),
+                    }
                 });
             }
             "arg_instruction" => {
@@ -69,6 +73,9 @@ pub(super) fn structure(root: &Node<'_>, source: &str) -> Vec<StructureItem> {
 struct Stage {
     name: String,
     start: usize,
+    /// The row and column of `start`, carried from the `FROM` node so closing
+    /// the stage does not recount the newlines above it.
+    start_position: (usize, usize),
     end: usize,
     children: Vec<StructureItem>,
 }
@@ -100,7 +107,7 @@ fn close(stage: &mut Option<Stage>, items: &mut Vec<StructureItem>, source: &str
         items.push(StructureItem {
             kind: StructureKind::Module,
             name: Some(stage.name),
-            span: super::intelligence::span_between(source, stage.start, stage.end),
+            span: super::intelligence::span_between_from(source, stage.start, stage.end, stage.start_position),
             children: stage.children,
             ..StructureItem::default()
         });
